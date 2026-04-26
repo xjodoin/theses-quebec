@@ -7,6 +7,11 @@ broader ones (e.g. éducation).
 
 To extend: add a tuple to DISCIPLINE_RULES. Keep keywords lowercase and
 without diacritics — we strip both before matching.
+
+Taxonomy aligned with Érudit's published discipline filter (see
+www.erudit.org). We keep a flat list (no hierarchy in DB) but cluster
+related entries with comments. Specific subcategories MUST appear
+before parent disciplines so they win the first-match scan.
 """
 from __future__ import annotations
 
@@ -16,8 +21,14 @@ import unicodedata
 # (canonical discipline, [keywords...])
 # Order matters: scanned top-to-bottom, first hit wins.
 DISCIPLINE_RULES: list[tuple[str, list[str]]] = [
+    # --- Éducation ---
+    ("Didactique", [
+        "didactique", "didactic", "didactics",
+        "didactique des mathematiques", "didactique des sciences",
+        "didactique des langues", "subject teaching",
+    ]),
     ("Sciences de l'éducation", [
-        "education", "didactique", "pedagogie", "enseignement",
+        "education", "pedagogie", "enseignement",
         "andragogie", "orthopedagogie", "psychopedagogie",
         "sciences de l'education", "education sciences",
         "educational", "teaching", "teacher", "teachers",
@@ -25,6 +36,14 @@ DISCIPLINE_RULES: list[tuple[str, list[str]]] = [
         "study and teaching", "second language acquisition",
         "language acquisition", "instructional", "e-learning",
         "online learning", "learning strategies",
+    ]),
+
+    # --- Psychologie & sciences cognitives ---
+    ("Neurosciences", [
+        "neurosciences", "neuroscience", "neurobiologie", "neurobiology",
+        "neuroimagerie", "neuroimaging", "neural circuits",
+        "circuits neuronaux", "cognitive neuroscience",
+        "neurosciences cognitives", "synaptic",
     ]),
     ("Psychologie", [
         "psychologie", "psychology", "psychanalyse", "neuropsychologie",
@@ -34,13 +53,44 @@ DISCIPLINE_RULES: list[tuple[str, list[str]]] = [
         "human behavior", "human behaviour", "comportement humain",
         "social behavior", "social behaviour", "comportement social",
     ]),
+
+    # --- Sciences sociales ---
+    ("Démographie", [
+        "demographie", "demography", "demographic", "demographique",
+        "population studies", "etudes de la population",
+        "natalite", "mortality rate", "taux de mortalite",
+        "migrations humaines", "human migration", "etudes migratoires",
+        "migration studies",
+    ]),
+    ("Études féministes / études de genre", [
+        "etudes feministes", "feminist studies", "feminism", "feminisme",
+        "etudes de genre", "gender studies", "gender ", "gendered",
+        "women's studies", "etudes des femmes", "queer studies",
+        "etudes queer",
+    ]),
+    ("Études autochtones", [
+        "etudes autochtones", "indigenous studies", "autochtone", "autochtones",
+        "first nations", "premieres nations", "inuit", "metis",
+        "decolonization", "decolonisation", "native studies",
+    ]),
+    ("Études québécoises", [
+        "etudes quebecoises", "quebec studies",
+        "histoire du quebec", "litterature quebecoise",
+        "culture quebecoise", "societe quebecoise",
+        "identite quebecoise", "souverainete du quebec",
+        "quebec sovereignty",
+    ]),
     ("Sociologie", [
         "sociologie", "sociology", "sociological", "socio-",
         "social inequality", "inegalites sociales",
     ]),
     ("Anthropologie", [
         "anthropologie", "anthropology", "anthropological", "ethnologie",
-        "ethnography", "ethnographie",
+        "ethnography", "ethnographie", "ethnology",
+    ]),
+    ("Archéologie", [
+        "archeologie", "archaeology", "archeologique", "archaeological",
+        "prehistory", "prehistoire", "fouille archeologique",
     ]),
     ("Science politique", [
         "science politique", "political science", "relations internationales",
@@ -51,10 +101,27 @@ DISCIPLINE_RULES: list[tuple[str, list[str]]] = [
         "economie", "economics", "econometrie", "econometrics",
         "economic", "economique",
     ]),
+    ("Relations industrielles", [
+        "relations industrielles", "industrial relations",
+        "labour relations", "labor relations", "relations de travail",
+    ]),
+    ("Travail social", [
+        "travail social", "social work", "service social",
+        "intervention sociale",
+    ]),
+    ("Criminologie", [
+        "criminologie", "criminology", "criminal justice",
+        "justice criminelle", "delinquance",
+    ]),
+
+    # --- Droit ---
     ("Droit", [
         "droit", "law ", "jurisprudence", "juridique", " legal",
-        "legislation", "constitutional",
+        "legislation", "constitutional", "droit civil",
+        "droit international", "droit penal", "droit du travail",
     ]),
+
+    # --- Histoire & humanités ---
     ("Histoire", [
         "histoire", " history", "historical", "historiography",
         "historiographie",
@@ -72,10 +139,17 @@ DISCIPLINE_RULES: list[tuple[str, list[str]]] = [
         "religious studies", "sciences des religions", "religion ",
         "biblical", "biblique",
     ]),
+
+    # --- Lettres et langues ---
     ("Linguistique", [
         "linguistique", "linguistics", "linguistic", "phonologie",
         "phonology", "phonetics", "phonetique", "syntaxe", "syntax",
-        "sociolinguistics", "sociolinguistique",
+        "sociolinguistics", "sociolinguistique", "morphology", "morphologie",
+        "semantics", "semantique",
+    ]),
+    ("Traduction", [
+        "traduction", "translation studies", "traductologie",
+        "translation", "translatology", "interpretation ",
     ]),
     ("Littérature", [
         "litterature", "literature", "literary", "litteraire",
@@ -83,107 +157,255 @@ DISCIPLINE_RULES: list[tuple[str, list[str]]] = [
         "creation litteraire", "creative writing", "poetics",
         "poetique", "fiction", "narratology", "narratologie",
     ]),
+
+    # --- Communication & médias ---
+    ("Études cinématographiques", [
+        "etudes cinematographiques", "film studies", "cinema ",
+        "cinematographique", "film theory", "etudes filmiques",
+    ]),
     ("Communication", [
         "communication", "media studies", "etudes mediatiques",
         "journalisme", "journalism", "rhetoric", "rhetorique",
     ]),
-    ("Arts visuels et médiatiques", [
-        "arts visuels", "visual arts", "histoire de l'art", "art history",
-        "arts mediatiques", "media arts", "design", "cinema ",
-        "film studies", "etudes cinematographiques", "photography",
-        "photographie",
-    ]),
+
+    # --- Arts ---
     ("Musique", [
         "musique", "music", "musicologie", "musicology",
         "ethnomusicologie", "ethnomusicology", "musical",
     ]),
+    ("Théâtre / arts de la scène", [
+        "theatre", "theater", "performing arts", "arts de la scene",
+        "dramaturgie", "dramaturgy", "scenographie",
+    ]),
+    ("Danse", [
+        "danse", "dance", "choregraphie", "choreography", "ballet",
+    ]),
+    ("Design", [
+        "design industriel", "industrial design", "design graphique",
+        "graphic design", "design d'interieur", "interior design",
+        "design de mode", "fashion design", "ux design",
+    ]),
+    ("Arts visuels et médiatiques", [
+        "arts visuels", "visual arts", "histoire de l'art", "art history",
+        "arts mediatiques", "media arts", "design", "photography",
+        "photographie", "sculpture", "peinture",
+    ]),
+
+    # --- Santé ---
+    ("Sciences pharmaceutiques", [
+        "sciences pharmaceutiques", "pharmaceutical sciences",
+        "pharmacie", "pharmacy", "pharmacology", "pharmacologie",
+        "pharmaceutique", "pharmaceutical", "drug discovery",
+        "drug delivery",
+    ]),
     ("Sciences infirmières", [
         "sciences infirmieres", "nursing", "infirmier", "infirmiere",
     ]),
-    ("Médecine", [
-        "medecine", "medicine", "medical", "medecin", "medicale",
-        "epidemiologie", "epidemiology", "pharmacologie", "pharmacology",
-        "clinical", "clinique", "oncology", "oncologie",
-        "cardiology", "cardiologie", "neurology", "neurologie",
-        "immunology", "immunologie", "pathology", "pathologie",
-        "physiology", "physiologie", "surgery", "chirurgie",
-        "pediatric", "pediatrique", "rehabilitation", "readaptation",
-    ]),
     ("Santé publique", [
         "sante publique", "public health", "global health",
-        "sante mondiale", "epidemiology",
+        "sante mondiale", "epidemiologie", "epidemiology",
+        "promotion de la sante", "health promotion",
     ]),
     ("Kinésiologie & sciences de l'activité physique", [
         "kinesiologie", "kinesiology", "sciences de l'activite physique",
         "education physique", "physical education", "exercise science",
         "sport science", "sciences du sport",
     ]),
+    ("Nutrition", [
+        "nutrition", "dietetique", "dietetics", "nutritional", "alimentation",
+        "food science", "sciences des aliments", "nutritionnel",
+    ]),
+    ("Sciences de la réadaptation", [
+        "readaptation", "rehabilitation", "physiotherapie", "physiotherapy",
+        "ergotherapie", "occupational therapy", "orthophonie",
+        "speech therapy", "audiologie", "audiology",
+    ]),
+    ("Médecine dentaire", [
+        "medecine dentaire", "dentistry", "dentaire", "dental",
+        "odontologie", "orthodontie", "orthodontics",
+    ]),
+    ("Médecine vétérinaire", [
+        "medecine veterinaire", "veterinary medicine", "veterinaire",
+        "veterinary",
+    ]),
+    ("Médecine", [
+        "medecine", "medicine", "medical", "medecin", "medicale",
+        "clinical", "clinique", "oncology", "oncologie",
+        "cardiology", "cardiologie", "neurology", "neurologie",
+        "immunology", "immunologie", "pathology", "pathologie",
+        "physiology", "physiologie", "surgery", "chirurgie",
+        "pediatric", "pediatrique",
+    ]),
+
+    # --- Sciences de la vie ---
+    ("Biologie cellulaire et moléculaire", [
+        "biologie cellulaire", "cell biology", "biologie moleculaire",
+        "molecular biology", "biochimie", "biochemistry", "biochemical",
+        "proteomique", "proteomics", "genomique", "genomics",
+    ]),
+    ("Génétique", [
+        "genetique", "genetics", "genetic", "genome", "epigenetique",
+        "epigenetics", "heredite", "heredity",
+    ]),
+    ("Microbiologie", [
+        "microbiologie", "microbiology", "microbial", "bacteriologie",
+        "bacteriology", "virologie", "virology", "mycologie",
+    ]),
+    ("Biotechnologie", [
+        "biotechnologie", "biotechnology", "bioingenierie", "bioengineering",
+        "bioinformatique", "bioinformatics",
+    ]),
     ("Biologie", [
         "biologie", "biology", "biological", "biologique",
+        "zoology", "zoologie", "botany", "botanique",
+        "physiologie animale", "physiologie vegetale",
+    ]),
+
+    # --- Sciences de l'environnement ---
+    ("Écologie", [
         "ecologie", "ecology", "ecological", "ecologique",
-        "genetique", "genetics", "genetic", "microbiologie",
-        "microbiology", "biochimie", "biochemistry", "biochemical",
-        "biotechnology", "biotechnologie", "molecular biology",
-        "cell biology", "biologie cellulaire", "zoology", "zoologie",
-        "botany", "botanique",
+        "biodiversite", "biodiversity", "ecosysteme", "ecosystem",
+        "ecotoxicologie", "ecotoxicology",
     ]),
-    ("Chimie", [
-        "chimie", "chemistry", "chimique", "chemical",
-        "organic chemistry", "inorganic chemistry",
+    ("Foresterie", [
+        "foresterie", "forestry", "sciences forestieres", "forest science",
+        "sylviculture", "silviculture",
     ]),
-    ("Physique", [
-        "physique", "physics", " astro", "astronomy", "astronomie",
-        "astrophysics", "astrophysique", "quantum", "quantique",
+    ("Sciences de la Terre", [
+        "sciences de la terre", "earth sciences", "geology", "geologie",
+        "geologique", "mineralogie", "mineralogy", "petrologie",
+        "geophysique", "geophysics", "sismologie", "seismology",
     ]),
-    ("Mathématiques", [
-        "mathematique", "mathematics", "mathematical",
-        "statistique", "statistics", "statistical",
-        "probability", "probabilite",
-        "algebra", "algebre",
+    ("Climatologie", [
+        "climatologie", "climate", "climatique", "changement climatique",
+        "climate change", "meteorologie", "meteorology",
     ]),
-    ("Informatique", [
-        "informatique", "computer science", "computing",
-        "intelligence artificielle", "artificial intelligence",
-        "data science", "apprentissage automatique", "machine learning",
-        "deep learning", "reinforcement learning", "natural language processing",
-        "traitement du langage", "software engineering", "genie logiciel",
-    ]),
-    ("Génie", [
-        "genie ", "engineering", "ingenierie", "mecanique", "mechanical",
-        "electrique", "electrical", "civil ", "aerospatial", "aerospace",
-        "automatique", "telecommunications", "robotique", "robotics",
-        "electrokinetic", "materials science", "science des materiaux",
-        "manufacturing", "fabrication",
+    ("Hydrologie & océanographie", [
+        "hydrologie", "hydrology", "oceanography", "oceanographie",
+        "limnologie", "limnology", "ressources en eau", "water resources",
     ]),
     ("Sciences de l'environnement", [
         "environnement", "environment", "environmental",
         "developpement durable", "sustainability", "sustainable",
-        "sciences de la terre", "earth sciences", "geology", "geologie",
-        "climatologie", "climate", "climatique",
-        "biodegradation", "pollution", "remediation", "ecotoxicologie",
-        "ecotoxicology", "hydrologie", "hydrology", "oceanography",
-        "oceanographie", "forestry", "foresterie", "natural resources",
-        "ressources naturelles",
+        "pollution", "remediation", "biodegradation",
+        "natural resources", "ressources naturelles",
     ]),
-    ("Administration & gestion", [
-        "administration", "management", "gestion", "marketing", "finance",
-        "comptabilite", "accounting", "ressources humaines",
-        "human resources", "mba", "entrepreneurship", "entrepreneuriat",
-        "strategy", "strategie", "operations management",
+
+    # --- Sciences exactes ---
+    ("Astronomie & astrophysique", [
+        " astro", "astronomy", "astronomie",
+        "astrophysics", "astrophysique", "cosmology", "cosmologie",
     ]),
-    ("Travail social", [
-        "travail social", "social work", "service social",
-        "intervention sociale",
+    ("Chimie", [
+        "chimie", "chemistry", "chimique", "chemical",
+        "organic chemistry", "inorganic chemistry", "catalyse", "catalysis",
     ]),
-    ("Criminologie", [
-        "criminologie", "criminology", "criminal justice",
-        "justice criminelle",
+    ("Physique", [
+        "physique", "physics", "quantum", "quantique", "particle physics",
+        "physique des particules", "matiere condensee", "condensed matter",
+        "optique", "optics", "photonique", "photonics",
     ]),
+    ("Statistique", [
+        "statistique", "statistics", "statistical",
+        "probability", "probabilite", "biostatistique", "biostatistics",
+        "stochastic", "stochastique",
+    ]),
+    ("Mathématiques", [
+        "mathematique", "mathematics", "mathematical",
+        "algebra", "algebre", "topology", "topologie",
+        "analyse mathematique", "geometrie", "geometry",
+    ]),
+
+    # --- Informatique ---
+    ("Intelligence artificielle & apprentissage automatique", [
+        "intelligence artificielle", "artificial intelligence",
+        "apprentissage automatique", "machine learning",
+        "deep learning", "apprentissage profond",
+        "reinforcement learning", "natural language processing",
+        "traitement du langage", "computer vision", "vision par ordinateur",
+        "neural network", "reseau de neurones",
+    ]),
+    ("Informatique", [
+        "informatique", "computer science", "computing",
+        "data science", "science des donnees",
+        "software engineering", "genie logiciel", "algorithmique",
+        "algorithms", "cybersecurity", "cybersecurite",
+        "base de donnees", "databases",
+    ]),
+
+    # --- Génie ---
+    ("Génie civil", [
+        "genie civil", "civil engineering", "structures",
+        "geotechnique", "geotechnical", "transportation engineering",
+        "genie des transports", "construction",
+    ]),
+    ("Génie mécanique", [
+        "genie mecanique", "mechanical engineering", "mecanique des fluides",
+        "fluid mechanics", "thermodynamique", "thermodynamics",
+    ]),
+    ("Génie électrique", [
+        "genie electrique", "electrical engineering", "electronique",
+        "electronics", "puissance electrique", "power electronics",
+        "telecommunications", "telecommunication",
+    ]),
+    ("Génie chimique", [
+        "genie chimique", "chemical engineering", "procedes chimiques",
+        "chemical processes",
+    ]),
+    ("Génie biomédical", [
+        "genie biomedical", "biomedical engineering", "biomedical devices",
+        "ingenierie tissulaire", "tissue engineering",
+    ]),
+    ("Génie aérospatial", [
+        "genie aerospatial", "aerospace engineering", "aeronautique",
+        "aeronautics", "aerospace",
+    ]),
+    ("Génie industriel", [
+        "genie industriel", "industrial engineering", "ingenierie industrielle",
+        "operations research", "recherche operationnelle",
+    ]),
+    ("Science des matériaux", [
+        "science des materiaux", "materials science", "materials engineering",
+        "genie des materiaux", "metallurgie", "metallurgy", "polymeres",
+        "polymers", "nanomateriaux", "nanomaterials",
+    ]),
+    ("Génie", [
+        "genie ", "engineering", "ingenierie", "automatique",
+        "robotique", "robotics", "manufacturing", "fabrication",
+        "mecatronique", "mechatronics",
+    ]),
+
+    # --- Études urbaines & architecture ---
     ("Urbanisme & études urbaines", [
         "urbanisme", "urban planning", "etudes urbaines", "urban studies",
-        "city planning",
+        "city planning", "amenagement du territoire",
     ]),
-    ("Architecture", ["architecture", "architectural"]),
+    ("Architecture", [
+        "architecture", "architectural",
+    ]),
+
+    # --- Administration ---
+    ("Comptabilité", [
+        "comptabilite", "accounting", "audit ", "fiscalite", "taxation",
+    ]),
+    ("Finance", [
+        "finance", "financial", "financiere", "actuariat", "actuarial",
+        "investment", "investissement", "banking", "bancaire",
+    ]),
+    ("Marketing", [
+        "marketing", "consumer behavior", "comportement du consommateur",
+        "branding", "publicite", "advertising",
+    ]),
+    ("Ressources humaines", [
+        "ressources humaines", "human resources", "grh ",
+        "gestion des ressources humaines",
+    ]),
+    ("Administration & gestion", [
+        "administration", "management", "gestion", "mba",
+        "entrepreneurship", "entrepreneuriat",
+        "strategy", "strategie", "operations management",
+        "sciences de la gestion",
+    ]),
 ]
 
 OTHER = "Autre / non classé"

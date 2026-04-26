@@ -7,11 +7,10 @@ def _rec(title="", subjects="", abstract="", publisher=""):
 
 
 def test_didactique_beats_education():
-    # Both keywords are in the same rule (Sciences de l'éducation),
-    # but didactique appearing should still resolve to that bucket
-    # ahead of any broader hit.
+    # "didactique" is its own canonical discipline and must take precedence
+    # over the broader "Sciences de l'éducation" bucket.
     assert classify_discipline(_rec(title="Didactique des mathématiques")) \
-        == "Sciences de l'éducation"
+        == "Didactique"
 
 
 def test_psychologie_cognitive():
@@ -20,11 +19,10 @@ def test_psychologie_cognitive():
 
 
 def test_diacritics_ignored():
-    # "ecologie" (no accent) must match keyword "ecologie" in Biologie
-    # (Sciences de l'environnement does not contain "ecologie"; it has
-    # "environnement", "ecotoxicologie" etc.)
-    got = classify_discipline(_rec(title="Étude en ecologie microbienne"))
-    assert got == "Biologie"
+    # "ecologie" (no accent) must match the "Écologie" rule keyword "ecologie"
+    # — confirms diacritic stripping works.
+    got = classify_discipline(_rec(title="Étude en écologie microbienne"))
+    assert got == "Écologie"
 
 
 def test_empty_record_returns_other():
@@ -100,8 +98,9 @@ def test_english_chemistry():
 
 
 def test_english_engineering_mechanical():
+    # Specific sub-category must beat parent "Génie".
     assert classify_discipline(_rec(subjects="Mechanical engineering")) \
-        == "Génie"
+        == "Génie mécanique"
 
 
 def test_english_clinical_oncology():
@@ -127,6 +126,78 @@ def test_broad_keyword_education_in_abstract_does_not_misclassify():
 def test_broad_keyword_education_still_works_in_title():
     record = _rec(title="L'éducation préscolaire au Québec")
     assert classify_discipline(record) == "Sciences de l'éducation"
+
+
+def test_genie_civil_beats_generic_genie():
+    # Specific subcategory must win over the catch-all "Génie".
+    assert classify_discipline(_rec(subjects="Génie civil; Structures")) \
+        == "Génie civil"
+
+
+def test_genie_electrique_beats_generic_genie():
+    assert classify_discipline(_rec(title="Optimisation en génie électrique")) \
+        == "Génie électrique"
+
+
+def test_sciences_pharmaceutiques_beats_medecine():
+    # "pharmacologie" used to live inside Médecine; now it's its own bucket.
+    assert classify_discipline(_rec(subjects="Pharmacologie; Drug delivery")) \
+        == "Sciences pharmaceutiques"
+
+
+def test_neurosciences_beats_psychologie():
+    assert classify_discipline(_rec(title="Neuroimagerie des circuits neuronaux")) \
+        == "Neurosciences"
+
+
+def test_etudes_feministes():
+    assert classify_discipline(_rec(subjects="Études féministes; Gender studies")) \
+        == "Études féministes / études de genre"
+
+
+def test_etudes_autochtones():
+    assert classify_discipline(_rec(title="Souveraineté des Premières Nations au Canada")) \
+        == "Études autochtones"
+
+
+def test_demographie():
+    assert classify_discipline(_rec(subjects="Démographie; Fécondité")) \
+        == "Démographie"
+
+
+def test_traduction():
+    assert classify_discipline(_rec(title="Étude en traductologie comparée")) \
+        == "Traduction"
+
+
+def test_etudes_cinematographiques():
+    assert classify_discipline(_rec(subjects="Études cinématographiques; Film theory")) \
+        == "Études cinématographiques"
+
+
+def test_archeologie():
+    assert classify_discipline(_rec(subjects="Archéologie préhistorique")) \
+        == "Archéologie"
+
+
+def test_finance_beats_administration():
+    assert classify_discipline(_rec(subjects="Finance; Investissement")) \
+        == "Finance"
+
+
+def test_intelligence_artificielle_beats_informatique():
+    assert classify_discipline(_rec(title="Apprentissage profond pour la vision par ordinateur")) \
+        == "Intelligence artificielle & apprentissage automatique"
+
+
+def test_climatologie_beats_environnement():
+    assert classify_discipline(_rec(title="Modélisation du changement climatique")) \
+        == "Climatologie"
+
+
+def test_genetique_beats_biologie():
+    assert classify_discipline(_rec(subjects="Génétique humaine; Hérédité")) \
+        == "Génétique"
 
 
 def test_broad_keyword_history_in_abstract_does_not_misclassify():

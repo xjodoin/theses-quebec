@@ -14,7 +14,7 @@
 
 5 002 thèses et mémoires moissonnés depuis 13 dépôts institutionnels (Concordia,
 McGill, UdeM, Sherbrooke, Bishop's, Laval, le réseau UQ, INRS, ÉTS), classés
-dans 33 disciplines canoniques, indexés en plein texte avec facettes par
+dans 74 disciplines canoniques (taxonomie alignée sur Érudit), indexés en plein texte avec facettes par
 université, type, année et discipline.
 
 ![Capture de l'agrégateur — recherche par discipline](v3-after-llm.png)
@@ -52,7 +52,7 @@ Ce projet :
 1. **Moissonne** les métadonnées via OAI-PMH (le protocole standard que tous
    les dépôts EPrints / DSpace / Hyrax exposent).
 2. **Normalise** Dublin Core dans un schéma commun.
-3. **Classe** chaque thèse dans une discipline canonique (33 catégories) via
+3. **Classe** chaque thèse dans une discipline canonique (74 catégories, taxonomie alignée sur Érudit) via
    un classificateur règle-base + un classificateur LLM (Gemini 3 Flash) en
    batch pour le résidu.
 4. **Indexe** en SQLite FTS5 avec facettes.
@@ -237,7 +237,7 @@ $EDITOR .env                      # colle GEMINI_API_KEY=...
 Caractéristiques clés :
 
 - **Schéma JSON enforcé** côté serveur : `responseSchema` avec `enum` strict
-  des 33 disciplines canoniques. La sortie est garantie d'être une étiquette
+  des 74 disciplines canoniques. La sortie est garantie d'être une étiquette
   valide.
 - **`thinkingBudget: 0`** : Gemini 3 utilise des thinking tokens par défaut.
   Pour de la classification mono-label on n'en veut pas — sinon ils mangent
