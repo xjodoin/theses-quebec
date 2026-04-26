@@ -35,7 +35,7 @@ ajout, ou réagis dans une issue pour discuter d'une priorité.
 |---|---|---|---|---|
 | 2.1 | **Lever le cap 500/source** — re-harvester sans `--max-per-source`. Estimation : ~50 000 records, DB ~250 MB. | S | ✶✶✶ | ⏳ |
 | 2.2 | **Migrer vers Pagefind** — à 50k records l'index MiniSearch dépasse 30 MB. Pagefind charge des chunks à la demande, ~100–500 KB par session. | M | ✶✶✶ | dépend de 2.1 |
-| 2.3 | **Ajouter Érudit** — `oai.erudit.org`, couvre revues + thèses. Le déclencheur initial du projet. | M | ✶✶✶ | ⏳ |
+| 2.3 | **Ajouter Érudit** — `oai.erudit.org`, couvre revues + thèses. Le déclencheur initial du projet. Investigué : OAI-PMH ne sert que des articles de revues (aucun set thèses, `dc:type=text`); les thèses Érudit sont fédérées depuis Papyrus/Savoirs UdeS/Archipel — déjà moissonnés directement. Voir notes dans `sources.yaml`. | M | ✶✶✶ | ✅ investigué |
 | 2.4 | **Étendre la taxonomie disciplinaire** — passer de 33 à 60+ catégories (sous-disciplines). Re-classifier en batch. | M | ✶✶ | ⏳ |
 | 2.5 | **Re-classifier l'historique** quand `classify.py` évolue — bouton CLI `classify-existing`. | S | ✶✶ | ⏳ |
 | 2.6 | **Dépôts canadiens hors Québec** — UofT, UBC, McMaster, Dalhousie. OAI-PMH partout. Renomme en `theses-canada` ? | L | ✶✶ | ⏳ |

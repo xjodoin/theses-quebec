@@ -89,3 +89,26 @@
   platform: dspace
   base_url: https://corpus.ulaval.ca/oai/request
   set: col_20.500.11794_17461   # collection « Thèses et mémoires »
+
+# TODO: Érudit OAI investigation results (roadmap 2.3)
+#   - Endpoints tried:
+#       https://oai.erudit.org/oai/request?verb=Identify              -> OK (Fedora-OAI provider)
+#       https://www.erudit.org/oai/request?verb=Identify              -> 404 HTML
+#       https://api.erudit.org/oai/request?verb=Identify              -> DNS no-resolve
+#       https://api.erudit.org/v1/oai-pmh?verb=Identify               -> DNS no-resolve
+#   - Findings:
+#       * Identify works, oai_dc + nlm + oai_openaire prefixes are advertised.
+#       * ListSets returns ~150 sets, ALL of them journals (`erudit.revue.*`)
+#         or cultural magazines (`erudit.culture.*`). No thesis/memoire/dissertation
+#         set exists.
+#       * Sample records (000001ar … 000007ar) show dc:type=text and
+#         dc:relation=<journal name; vol/no>, i.e. journal articles only.
+#       * Érudit's thesis section (www.erudit.org/fr/theses/) federates theses
+#         that already live in their home repositories (Papyrus, Savoirs UdeS,
+#         Archipel, etc.) — those are already harvested directly by us.
+#       * Conclusion: adding the OAI feed would harvest ~0 theses (or duplicate
+#         what we already have via the home repos). Not added on purpose.
+#   - Possible alternative: api.erudit.org/v1 (REST API) — would need a custom
+#     harvester and per-thesis fetches; only worth doing if a future audit shows
+#     theses Érudit hosts that are NOT in any of the 14 OAI sources we already
+#     cover.
