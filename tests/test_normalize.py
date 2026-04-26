@@ -147,3 +147,98 @@ def test_type_detected_from_title_alone():
     }), SOURCE)
     assert norm is not None
     assert norm["type"] == "thesis"
+
+
+def test_journal_article_dctype_rejected_even_if_thesis_in_abstract():
+    norm = normalize_record(_payload({
+        "title": ["Insulin resistance in kidney disease"],
+        "type": ["journal article", "article"],
+        "description": ["This work was extracted from the author's doctoral thesis."],
+        "publisher": ["Public Library of Science"],
+    }), SOURCE)
+    assert norm is None
+
+
+def test_conference_object_dctype_rejected():
+    norm = normalize_record(_payload({
+        "title": ["Choisir dans l'abondance : les applications mobiles en santé"],
+        "type": ["conference object", "contribution à une conférence"],
+    }), SOURCE)
+    assert norm is None
+
+
+def test_acte_de_colloque_rejected():
+    norm = normalize_record(_payload({
+        "title": ["Acte de colloque sur l'éducation"],
+        "type": ["proceedings", "acte de colloque"],
+    }), SOURCE)
+    assert norm is None
+
+
+def test_book_dctype_rejected():
+    norm = normalize_record(_payload({
+        "title": ["Écrire au pape et au Père Noël"],
+        "type": ["book", "livre"],
+    }), SOURCE)
+    assert norm is None
+
+
+def test_map_dctype_rejected():
+    norm = normalize_record(_payload({
+        "title": ["Mortalité par suicide à Montréal"],
+        "type": ["map", "carte géographique"],
+    }), SOURCE)
+    assert norm is None
+
+
+def test_other_dctype_rejected_no_thesis_signal():
+    norm = normalize_record(_payload({
+        "title": ["ChatGPT : a dual-use technology"],
+        "type": ["other", "autre"],
+        "description": ["A pragmatic response to complex issues."],
+    }), SOURCE)
+    assert norm is None
+
+
+def test_french_thesis_de_doctorat_in_dctype():
+    norm = normalize_record(_payload({
+        "title": ["Étude sur les algorithmes"],
+        "type": ["Thèse de doctorat"],
+    }), SOURCE)
+    assert norm is not None
+    assert norm["type"] == "thesis"
+
+
+def test_french_memoire_de_maitrise_in_dctype():
+    norm = normalize_record(_payload({
+        "title": ["Étude exploratoire"],
+        "type": ["Mémoire de maîtrise"],
+    }), SOURCE)
+    assert norm is not None
+    assert norm["type"] == "memoire"
+
+
+def test_dspace_bilingual_thesis_thèse_in_type():
+    # UdeM-style bilingual values in dc:type — should resolve to thesis.
+    norm = normalize_record(_payload({
+        "title": ["Le Parlement européen face à la politisation du CETA"],
+        "type": ["thesis", "thèse"],
+    }), SOURCE)
+    assert norm is not None
+    assert norm["type"] == "thesis"
+
+
+def test_eu_repo_doctoral_uri():
+    norm = normalize_record(_payload({
+        "title": ["Sur les modèles de langue"],
+        "type": ["info:eu-repo/semantics/doctoralThesis"],
+    }), SOURCE)
+    assert norm["type"] == "thesis"
+
+
+def test_eu_repo_master_uri():
+    norm = normalize_record(_payload({
+        "title": ["Sur l'apprentissage par renforcement"],
+        "type": ["info:eu-repo/semantics/masterThesis"],
+    }), SOURCE)
+    assert norm["type"] == "memoire"
