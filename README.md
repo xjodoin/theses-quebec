@@ -202,6 +202,7 @@ Sources actuellement configurées dans
 | INRS (EspaceINRS) | EPrints | `/cgi/oai2` |
 | ÉTS (Espace ETS) | EPrints | `/cgi/oai2` |
 | TÉLUQ (R-Libre) | EPrints | `/cgi/oai2` |
+| Polytechnique Montréal (PolyPublie) | EPrints | `/cgi/oai2` (set `types=thesis`) |
 | Laval (Corpus UL) | DSpace | `/oai/request` |
 | McGill (eScholarship) | Hyrax / Blacklight | `/catalog/oai` (via Playwright) |
 

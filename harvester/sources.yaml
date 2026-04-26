@@ -83,6 +83,13 @@
   platform: eprints
   base_url: https://r-libre.teluq.ca/cgi/oai2
 
+- id: polymtl
+  name: Polytechnique Montréal (PolyPublie)
+  short: Polytechnique
+  platform: eprints
+  base_url: https://publications.polymtl.ca/cgi/oai2
+  set: 74797065733D746865736973   # « Type = Mémoire ou thèse » (hex of types=thesis)
+
 - id: laval
   name: Université Laval (Corpus UL)
   short: Laval
