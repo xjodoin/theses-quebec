@@ -1,0 +1,33 @@
+name: 🐛 Bug
+description: Signaler un comportement inattendu
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Que s'est-il passé ?
+      description: Comportement observé vs attendu. Inclure les messages d'erreur.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Comment reproduire
+      description: Étapes minimales (commandes, URL, requête API…).
+      placeholder: |
+        1. `python harvester/harvest.py --only foo`
+        2. ...
+        3. Erreur : ...
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environnement
+      placeholder: "macOS 14, Python 3.13, branche main, commit abc123"
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Autres détails
+      description: Logs, captures, hypothèses…

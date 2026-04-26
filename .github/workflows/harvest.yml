@@ -1,0 +1,113 @@
+name: Weekly harvest
+
+# Re-moissonne les dépôts chaque lundi matin et commit la DB rafraîchie
+# via Git LFS. Si GEMINI_API_KEY est défini en secret, lance aussi le
+# classificateur LLM sur les enregistrements sans discipline.
+#
+# Déclencheurs : cron hebdomadaire + bouton manuel (workflow_dispatch).
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"   # lundi 08:00 UTC = 04:00 ET (Montréal)
+  workflow_dispatch:
+    inputs:
+      max_per_source:
+        description: "Limite de records par source OAI (laisser vide = tout)"
+        required: false
+        default: ""
+      run_llm:
+        description: "Lancer le classificateur LLM Gemini ?"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # nécessaire pour commit + push de la DB
+
+concurrency:
+  group: harvest
+  cancel-in-progress: false   # ne pas couper un harvest en cours
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180   # le batch LLM peut prendre ~1 h
+    steps:
+      - name: Checkout (avec LFS)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright chromium (pour McGill)
+        run: playwright install --with-deps chromium
+
+      - name: OAI-PMH harvest (12 dépôts EPrints/DSpace)
+        run: |
+          MAX="${{ inputs.max_per_source }}"
+          if [ -n "$MAX" ]; then
+            python harvester/harvest.py --max-per-source "$MAX"
+          else
+            python harvester/harvest.py
+          fi
+
+      - name: McGill harvest (Hyrax via Playwright)
+        run: |
+          MAX="${{ inputs.max_per_source }}"
+          if [ -n "$MAX" ]; then
+            python harvester/mcgill_harvest.py --max-records "$MAX"
+          else
+            python harvester/mcgill_harvest.py
+          fi
+
+      - name: Classification LLM (Gemini 3 Flash batch)
+        if: ${{ inputs.run_llm != false }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "::warning::GEMINI_API_KEY non défini — étape LLM ignorée."
+            echo "Pour l'activer : Settings → Secrets and variables → Actions → New secret."
+            exit 0
+          fi
+          python harvester/llm_classify.py run --interval 30
+
+      - name: Stats finales
+        run: |
+          python <<'PY'
+          import sqlite3
+          c = sqlite3.connect("data/theses.db")
+          total = c.execute("SELECT COUNT(*) FROM theses").fetchone()[0]
+          unclassified = c.execute(
+              "SELECT COUNT(*) FROM theses WHERE discipline = 'Autre / non classé'"
+          ).fetchone()[0]
+          print(f"Total       : {total:,}")
+          print(f"Unclassified: {unclassified} ({100*unclassified/max(1,total):.2f} %)")
+          print("\nTop 10 disciplines:")
+          for d, n in c.execute(
+              "SELECT discipline, COUNT(*) FROM theses GROUP BY discipline ORDER BY 2 DESC LIMIT 10"
+          ):
+              print(f"  {n:5}  {d}")
+          PY
+
+      - name: Commit + push si la DB a changé
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet data/theses.db 2>/dev/null; then
+            echo "Aucun changement — skip."
+            exit 0
+          fi
+          git add data/theses.db
+          git commit -m "harvest: refresh hebdomadaire ($(date -u +%Y-%m-%d))"
+          git push

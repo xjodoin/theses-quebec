@@ -1,0 +1,57 @@
+name: ➕ Nouvelle source
+description: Proposer un nouveau dépôt institutionnel à moissonner
+labels: ["new-source"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Avant de remplir : vérifie que le dépôt expose OAI-PMH avec
+        `curl "https://<host>/oai/request?verb=Identify"` ou `/cgi/oai2?verb=Identify`.
+
+  - type: input
+    id: institution
+    attributes:
+      label: Université / institution
+      placeholder: "Université de Foo"
+    validations:
+      required: true
+
+  - type: input
+    id: short_name
+    attributes:
+      label: Nom court (affiché dans l'UI)
+      placeholder: "Foo"
+
+  - type: input
+    id: oai_url
+    attributes:
+      label: URL OAI-PMH
+      placeholder: "https://depot.ufoo.ca/cgi/oai2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Plateforme
+      options:
+        - eprints
+        - dspace
+        - blacklight (Hyrax)
+        - autre
+        - je ne sais pas
+    validations:
+      required: true
+
+  - type: input
+    id: setspec
+    attributes:
+      label: setSpec optionnel pour cibler les thèses
+      description: Si laisser vide, on filtre par dc:type=Thesis à l'ingestion.
+      placeholder: "ex: col_20.500.11794_17461"
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: WAF, rate-limit, lenteur, particularités d'auth, etc.

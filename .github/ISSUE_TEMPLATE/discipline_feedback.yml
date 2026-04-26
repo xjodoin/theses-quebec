@@ -1,0 +1,45 @@
+name: 🎯 Erreur de classification disciplinaire
+description: Une thèse est classée dans la mauvaise discipline
+labels: ["classification"]
+body:
+  - type: input
+    id: oai_id
+    attributes:
+      label: oai_identifier (ou URL de la thèse)
+    validations:
+      required: true
+
+  - type: input
+    id: title
+    attributes:
+      label: Titre
+
+  - type: input
+    id: current
+    attributes:
+      label: Discipline actuelle
+    validations:
+      required: true
+
+  - type: input
+    id: expected
+    attributes:
+      label: Discipline attendue
+    validations:
+      required: true
+
+  - type: dropdown
+    id: classifier
+    attributes:
+      label: Quel classificateur l'a produite ?
+      description: Si la thèse a un dc:subject riche, c'est probablement le rule-based ; sinon le LLM.
+      options:
+        - règle-base (classify.py)
+        - LLM (Gemini)
+        - je ne sais pas
+
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Pourquoi le classement est incorrect
+      description: Quels signaux dans les métadonnées appuient la bonne discipline ?
