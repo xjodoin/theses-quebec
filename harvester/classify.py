@@ -188,6 +188,14 @@ DISCIPLINE_RULES: list[tuple[str, list[str]]] = [
 
 OTHER = "Autre / non classé"
 
+# Keywords too broad to be matched in abstracts: they appear frequently as
+# covariates / context in unrelated theses (e.g. "education" as a control
+# variable in an econometrics thesis, "art" inside "state of the art").
+# These only match in the authoritative fields: title + subjects.
+BROAD_KEYWORDS = frozenset({
+    "education", "art", "history", "law", "design",
+})
+
 
 def _strip(text: str) -> str:
     """lowercase + remove diacritics, for resilient matching."""
@@ -197,14 +205,20 @@ def _strip(text: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
-# Pre-compile regexes for word-boundary matching where the keyword
-# doesn't already contain a leading/trailing space.
-_compiled: list[tuple[str, list[re.Pattern]]] = [
+def _make_pattern(kw: str) -> re.Pattern:
+    if " " in kw:
+        return re.compile(re.escape(kw))
+    return re.compile(rf"(?:^|[^a-z]){re.escape(kw.strip())}(?:[^a-z]|$)")
+
+
+# Each entry: (discipline, [(pattern, is_broad), ...]).
+# A "broad" keyword only matches when it appears in title + subjects, not
+# in the abstract — this is the simplest defense against incidental mentions
+# (see BROAD_KEYWORDS docstring).
+_compiled: list[tuple[str, list[tuple[re.Pattern, bool]]]] = [
     (
         discipline,
-        [re.compile(rf"(?:^|[^a-z]){re.escape(kw.strip())}(?:[^a-z]|$)")
-         if " " not in kw else re.compile(re.escape(kw))
-         for kw in keywords],
+        [(_make_pattern(kw), kw.strip() in BROAD_KEYWORDS) for kw in keywords],
     )
     for discipline, keywords in DISCIPLINE_RULES
 ]
@@ -212,17 +226,18 @@ _compiled: list[tuple[str, list[re.Pattern]]] = [
 
 def classify_discipline(record: dict) -> str:
     """Return the canonical discipline string for a normalized thesis record."""
-    blob = _strip(" ".join([
+    primary_blob = _strip(" ".join([
         record.get("subjects") or "",
         record.get("title") or "",
         record.get("publisher") or "",
-        record.get("abstract") or "",
     ]))
-    if not blob:
+    full_blob = primary_blob + " " + _strip(record.get("abstract") or "")
+    if not full_blob.strip():
         return OTHER
 
     for discipline, patterns in _compiled:
-        for pat in patterns:
-            if pat.search(blob):
+        for pat, broad in patterns:
+            target = primary_blob if broad else full_blob
+            if pat.search(target):
                 return discipline
     return OTHER
