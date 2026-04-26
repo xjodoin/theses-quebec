@@ -379,8 +379,52 @@ tailwind.config = {
   </div>
 </footer>
 
+<aside id="detail-modal" class="hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+  <div data-overlay class="absolute inset-0 bg-ink-900/60 dark:bg-black/70 backdrop-blur-sm"></div>
+  <div class="relative h-full w-full overflow-y-auto flex items-start justify-center">
+    <div data-card class="relative bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 rounded-xl shadow-card-hover max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+      <button data-close type="button" aria-label="Fermer"
+              class="absolute top-3 right-3 z-10 inline-flex items-center justify-center w-8 h-8 rounded-md text-ink-500 hover:text-ink-900 dark:text-ink-400 dark:hover:text-ink-100 hover:bg-ink-100 dark:hover:bg-ink-700 transition">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6l-12 12" stroke-linecap="round"/></svg>
+      </button>
+      <div class="p-6 sm:p-8 space-y-5">
+        <div class="flex flex-wrap items-center gap-2">
+          <span data-type-badge class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide"></span>
+          <span data-discipline class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-ink-100 dark:bg-ink-700 text-ink-700 dark:text-ink-200"></span>
+        </div>
+        <h2 id="detail-title" data-title class="font-serif text-2xl font-semibold leading-snug text-ink-900 dark:text-ink-50"></h2>
+        <p data-authors class="text-sm text-ink-600 dark:text-ink-300"></p>
+        <p data-meta class="text-xs text-ink-500 dark:text-ink-400"></p>
+        <p data-abstract class="text-sm text-ink-700 dark:text-ink-200 leading-relaxed whitespace-pre-line"></p>
+        <div>
+          <a data-source-url target="_blank" rel="noopener"
+             class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium transition">
+            Ouvrir la source
+            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17l10-10M9 7h8v8" stroke-linecap="round"/></svg>
+          </a>
+        </div>
+        <section class="border-t border-ink-100 dark:border-ink-700 pt-5">
+          <h3 class="font-serif text-lg font-semibold text-ink-900 dark:text-ink-50 mb-3">Citer cette thèse</h3>
+          <div data-cite-tabs class="inline-flex rounded-md border border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-800 text-sm overflow-hidden mb-3">
+            <button type="button" data-cite-fmt="bibtex" class="cite-tab px-3 py-1.5 text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700">BibTeX</button>
+            <button type="button" data-cite-fmt="apa" class="cite-tab px-3 py-1.5 text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700 border-l border-ink-200 dark:border-ink-700">APA</button>
+            <button type="button" data-cite-fmt="ris" class="cite-tab px-3 py-1.5 text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700 border-l border-ink-200 dark:border-ink-700">RIS</button>
+          </div>
+          <div class="flex items-start gap-2">
+            <pre data-cite-output class="flex-1 font-mono text-xs whitespace-pre-wrap bg-ink-50 dark:bg-ink-900 border border-ink-200 dark:border-ink-700 rounded p-3 text-ink-800 dark:text-ink-100"></pre>
+            <button type="button" data-cite-copy
+                    class="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium border border-ink-200 dark:border-ink-700 text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700 transition">
+              <span data-cite-copy-label>Copier</span>
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</aside>
+
 <template id="tmpl-result">
-  <li class="group bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 rounded-lg p-4 sm:p-5 hover:border-ink-300 dark:hover:border-ink-600 hover:shadow-card-hover shadow-card transition-all">
+  <li class="group bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 rounded-lg p-4 sm:p-5 hover:border-ink-300 dark:hover:border-ink-600 hover:shadow-card-hover shadow-card transition-all cursor-pointer">
     <div class="flex items-start gap-4">
       <div class="flex-1 min-w-0">
         <div class="flex flex-wrap items-center gap-2 mb-1.5">
@@ -652,8 +696,17 @@ function renderResults(pageDocs) {
     li.querySelector("[data-source]").textContent = r.source_name || "";
     li.querySelector("[data-year]").textContent = r.year || "—";
     li.querySelector("[data-open]").href = r.url || "#";
+    li._record = r;
+    li.addEventListener("click", onResultCardClick);
     ul.appendChild(node);
   }
+}
+
+function onResultCardClick(ev) {
+  if (ev.target.closest("a, button")) return;
+  if (window.getSelection && window.getSelection().toString().length > 0) return;
+  const li = ev.currentTarget;
+  if (li && li._record) openDetail(li._record);
 }
 
 function renderPager(total, page, size) {
@@ -810,6 +863,214 @@ function runSearch() {
     ` <span class="text-ink-400 dark:text-ink-500">· ${dt} ms</span>`;
 }
 
+// ----------------------------------------------------------- detail modal --
+const modal = $("#detail-modal");
+let modalLastFocus = null;
+let modalRecord = null;
+let modalCiteFormat = localStorage.getItem("tq:cite-format") || "bibtex";
+let citeCopyTimer = null;
+
+function asciiSlug(s) {
+  return String(s || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function parseAuthor(name) {
+  // Accept either "Lastname, Firstname" or "Firstname Lastname".
+  const s = String(name || "").trim();
+  if (!s) return null;
+  if (s.includes(",")) {
+    const [last, first = ""] = s.split(",", 2).map(t => t.trim());
+    return { last, first };
+  }
+  const parts = s.split(/\s+/);
+  if (parts.length === 1) return { last: parts[0], first: "" };
+  return { last: parts[parts.length - 1], first: parts.slice(0, -1).join(" ") };
+}
+
+function authorList(r) {
+  if (!r.authors) return [];
+  return r.authors.split(/;\s*/).map(parseAuthor).filter(Boolean);
+}
+
+function typeLabel(type) {
+  if (type === "thesis") return "Thèse de doctorat";
+  if (type === "memoire") return "Mémoire de maîtrise";
+  return "";
+}
+
+function bibtexEscape(s) {
+  return String(s || "").replace(/&/g, "\\&");
+}
+
+function buildBibtex(r) {
+  const authors = authorList(r);
+  const entryType = r.type === "memoire" ? "@mastersthesis" : "@phdthesis";
+  const firstLast = authors[0] ? asciiSlug(authors[0].last).split(" ")[0] : "record";
+  const titleWord = (asciiSlug(r.title).split(" ").find(w => w.length >= 3) || "");
+  const key = `${firstLast || "record"}${r.year || ""}${titleWord}`.replace(/\s+/g, "");
+  const lines = [`${entryType}{${key},`];
+  if (authors.length) {
+    const a = authors.map(p => `${p.last}${p.first ? ", " + p.first : ""}`).join(" and ");
+    lines.push(`  author = {${bibtexEscape(a)}},`);
+  }
+  if (r.title) lines.push(`  title  = {${bibtexEscape(r.title)}},`);
+  if (r.year)  lines.push(`  year   = {${r.year}},`);
+  if (r.source_name) lines.push(`  school = {${bibtexEscape(r.source_name)}},`);
+  const tl = typeLabel(r.type);
+  if (tl) lines.push(`  type   = {${tl}},`);
+  if (r.url) lines.push(`  url    = {${r.url}},`);
+  // Strip trailing comma on last line for cleanliness.
+  const last = lines.length - 1;
+  lines[last] = lines[last].replace(/,$/, "");
+  lines.push("}");
+  return lines.join("\n");
+}
+
+function buildAPA(r) {
+  const authors = authorList(r);
+  const formatOne = (p) => {
+    const initials = (p.first || "").split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase() + ".").join(" ");
+    return p.last + (initials ? ", " + initials : "");
+  };
+  let authorStr = "";
+  if (authors.length === 1) {
+    authorStr = formatOne(authors[0]);
+  } else if (authors.length === 2) {
+    authorStr = formatOne(authors[0]) + ", & " + formatOne(authors[1]);
+  } else if (authors.length >= 3 && authors.length <= 20) {
+    const parts = authors.slice(0, -1).map(formatOne);
+    authorStr = parts.join(", ") + ", & " + formatOne(authors[authors.length - 1]);
+  } else if (authors.length > 20) {
+    const first19 = authors.slice(0, 19).map(formatOne);
+    authorStr = first19.join(", ") + ", ... " + formatOne(authors[authors.length - 1]);
+  }
+  const parts = [];
+  if (authorStr) parts.push(authorStr);
+  if (r.year) parts.push(`(${r.year}).`);
+  else parts.push("(s. d.).");
+  if (r.title) parts.push(`*${r.title}*`);
+  const tl = typeLabel(r.type);
+  const bracket = [tl, r.source_name].filter(Boolean).join(", ");
+  if (bracket) parts.push(`[${bracket}].`);
+  if (r.url) parts.push(r.url);
+  // Join: author + ". " + (year). + title + [bracket]. + url
+  // We assembled with trailing punctuation already; join with spaces.
+  let out = "";
+  if (authorStr) out += authorStr + (authorStr.endsWith(".") ? " " : ". ");
+  out += r.year ? `(${r.year}). ` : "(s. d.). ";
+  if (r.title) {
+    const titlePunct = /[.!?]$/.test(r.title) ? "" : ".";
+    out += `*${r.title}*${titlePunct} `;
+  }
+  if (bracket) out += `[${bracket}]. `;
+  if (r.url) out += r.url;
+  return out.trim();
+}
+
+function buildRIS(r) {
+  const lines = ["TY  - THES"];
+  for (const p of authorList(r)) {
+    const name = `${p.last}${p.first ? ", " + p.first : ""}`;
+    lines.push(`AU  - ${name}`);
+  }
+  if (r.title) lines.push(`TI  - ${r.title}`);
+  if (r.year)  lines.push(`PY  - ${r.year}`);
+  if (r.source_name) lines.push(`PB  - ${r.source_name}`);
+  const tl = typeLabel(r.type);
+  if (tl) lines.push(`M3  - ${tl}`);
+  if (r.url) lines.push(`UR  - ${r.url}`);
+  lines.push("ER  - ");
+  return lines.join("\n");
+}
+
+function buildCitation(r, fmt) {
+  if (fmt === "apa") return buildAPA(r);
+  if (fmt === "ris") return buildRIS(r);
+  return buildBibtex(r);
+}
+
+function updateCiteTabs() {
+  $$("#detail-modal .cite-tab").forEach(b => {
+    const active = b.dataset.citeFmt === modalCiteFormat;
+    b.classList.toggle("bg-ink-800", active);
+    b.classList.toggle("dark:bg-ink-600", active);
+    b.classList.toggle("text-white", active);
+  });
+}
+
+function renderCitation() {
+  if (!modalRecord) return;
+  $("#detail-modal [data-cite-output]").textContent = buildCitation(modalRecord, modalCiteFormat);
+  updateCiteTabs();
+}
+
+function openDetail(r) {
+  modalRecord = r;
+  modalLastFocus = document.activeElement;
+  const ts = TYPE_STYLES[r.type] || { label: r.type || "Document", cls: "bg-ink-100 dark:bg-ink-700 text-ink-700 dark:text-ink-200" };
+  const tb = modal.querySelector("[data-type-badge]");
+  tb.textContent = ts.label;
+  tb.className = "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide " + ts.cls;
+  modal.querySelector("[data-discipline]").textContent = r.discipline || "Non classé";
+  modal.querySelector("[data-title]").textContent = r.title || "(sans titre)";
+  const authorsEl = modal.querySelector("[data-authors]");
+  const authors = authorList(r);
+  authorsEl.textContent = authors.length
+    ? authors.map(p => `${p.last}${p.first ? ", " + p.first : ""}`).join("  ·  ")
+    : "";
+  authorsEl.classList.toggle("hidden", !authors.length);
+  const metaParts = [];
+  if (r.source_name) metaParts.push(r.source_name);
+  if (r.year) metaParts.push(r.year);
+  const tl = typeLabel(r.type);
+  if (tl) metaParts.push(tl);
+  modal.querySelector("[data-meta]").textContent = metaParts.join(" · ");
+  const ab = modal.querySelector("[data-abstract]");
+  if (r.abstract) { ab.textContent = r.abstract; ab.classList.remove("hidden"); }
+  else { ab.textContent = ""; ab.classList.add("hidden"); }
+  const srcLink = modal.querySelector("[data-source-url]");
+  if (r.url) { srcLink.href = r.url; srcLink.classList.remove("hidden"); }
+  else srcLink.classList.add("hidden");
+  renderCitation();
+  modal.classList.remove("hidden");
+  document.body.classList.add("overflow-hidden");
+  setTimeout(() => modal.querySelector("[data-close]").focus(), 0);
+}
+
+function closeDetail() {
+  modal.classList.add("hidden");
+  document.body.classList.remove("overflow-hidden");
+  modalRecord = null;
+  if (modalLastFocus && typeof modalLastFocus.focus === "function") {
+    try { modalLastFocus.focus(); } catch (_) {}
+  }
+  modalLastFocus = null;
+}
+
+modal.querySelector("[data-close]").addEventListener("click", closeDetail);
+modal.querySelector("[data-overlay]").addEventListener("click", closeDetail);
+$$("#detail-modal .cite-tab").forEach(b => b.addEventListener("click", () => {
+  modalCiteFormat = b.dataset.citeFmt;
+  localStorage.setItem("tq:cite-format", modalCiteFormat);
+  renderCitation();
+}));
+modal.querySelector("[data-cite-copy]").addEventListener("click", async () => {
+  const label = modal.querySelector("[data-cite-copy-label]");
+  try {
+    await navigator.clipboard.writeText(modal.querySelector("[data-cite-output]").textContent);
+    label.textContent = "Copié !";
+  } catch {
+    label.textContent = "Échec";
+  }
+  clearTimeout(citeCopyTimer);
+  citeCopyTimer = setTimeout(() => { label.textContent = "Copier"; }, 1500);
+});
+
 // ----------------------------------------------------------- bootstrap ----
 async function bootstrap() {
   const splashStatus = $("#splash-status");
@@ -908,6 +1169,9 @@ $("#close-filters-mobile").addEventListener("click", closeDrawer);
 $("#sidebar-backdrop").addEventListener("click", closeDrawer);
 
 window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !modal.classList.contains("hidden")) {
+    e.preventDefault(); closeDetail(); return;
+  }
   if (e.key === "/" && !["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) {
     e.preventDefault(); $("#q").focus();
   }
