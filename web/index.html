@@ -480,7 +480,7 @@ const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 
 const state = {
   q: "", type: "", year_min: null, year_max: null, sort: "relevance",
-  discipline: new Set(), source: new Set(),
+  discipline: new Set(), source: new Set(), author: new Set(),
   page: 1, size: 20,
 };
 
@@ -494,6 +494,7 @@ function readURL() {
   state.page = +p.get("page") || 1;
   state.discipline = new Set(p.getAll("discipline"));
   state.source = new Set(p.getAll("source"));
+  state.author = new Set(p.getAll("author"));
 }
 
 function writeURL() {
@@ -506,6 +507,7 @@ function writeURL() {
   if (state.page > 1) p.set("page", state.page);
   for (const d of state.discipline) p.append("discipline", d);
   for (const s of state.source) p.append("source", s);
+  for (const a of state.author) p.append("author", a);
   const qs = p.toString();
   history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
 }
@@ -519,6 +521,7 @@ function paramsForAPI() {
   if (state.sort) p.set("sort", state.sort);
   for (const d of state.discipline) p.append("discipline", d);
   for (const s of state.source) p.append("source", s);
+  for (const a of state.author) p.append("author", a);
   return p;
 }
 
@@ -553,6 +556,73 @@ function renderTotals(totalRecords, sources) {
   `;
   $("#footer-sources").textContent =
     sources.map(s => s.source_name).join(" · ");
+}
+
+function renderAuthorChips(el, authorsStr) {
+  el.innerHTML = "";
+  if (!authorsStr) {
+    const span = document.createElement("span");
+    span.className = "text-ink-400 dark:text-ink-500 italic";
+    span.textContent = "auteur·rice non renseigné";
+    el.appendChild(span);
+    return;
+  }
+  const list = authorsStr.split(/;\s*/).map(s => s.trim()).filter(Boolean);
+  const shown = list.slice(0, 4);
+  shown.forEach((name, i) => {
+    const active = state.author.has(name);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.dataset.authorChip = name;
+    btn.className = "text-sm mr-1.5 hover:underline " +
+      (active
+        ? "text-accent-600 dark:text-accent-400 font-medium underline"
+        : "text-ink-600 dark:text-ink-300 hover:text-ink-900 dark:hover:text-ink-50");
+    btn.innerHTML = highlight(name, state.q);
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (state.author.has(name)) state.author.delete(name);
+      else state.author.add(name);
+      state.page = 1; runSearch();
+    });
+    el.appendChild(btn);
+    if (i < shown.length - 1) {
+      const sep = document.createElement("span");
+      sep.className = "text-ink-400 dark:text-ink-500 mr-1.5";
+      sep.textContent = "·";
+      el.appendChild(sep);
+    }
+  });
+  if (list.length > shown.length) {
+    const more = document.createElement("span");
+    more.className = "text-xs text-ink-400 dark:text-ink-500";
+    more.textContent = `+${list.length - shown.length} autres`;
+    el.appendChild(more);
+  }
+}
+
+function renderDisciplineChip(el, discipline) {
+  const value = discipline || "Non classé";
+  const active = !!discipline && state.discipline.has(discipline);
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.dataset.discipline = "";
+  btn.textContent = value;
+  btn.className = "inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium transition " +
+    (active
+      ? "bg-accent-100 dark:bg-accent-900 text-accent-700 dark:text-accent-200 ring-1 ring-accent-300"
+      : "bg-ink-100 dark:bg-ink-700 text-ink-700 dark:text-ink-200 hover:bg-ink-200 dark:hover:bg-ink-600");
+  if (discipline) {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (state.discipline.has(discipline)) state.discipline.delete(discipline);
+      else state.discipline.add(discipline);
+      state.page = 1; runSearch();
+    });
+  } else {
+    btn.disabled = true;
+  }
+  el.replaceWith(btn);
 }
 
 function renderResults(data, opts = {}) {
@@ -591,17 +661,13 @@ function renderResults(data, opts = {}) {
     typeBadge.textContent = typeStyle.label;
     typeBadge.className = typeBadge.className + " " + typeStyle.cls;
 
-    const disc = li.querySelector("[data-discipline]");
-    disc.textContent = r.discipline || "Non classé";
+    renderDisciplineChip(li.querySelector("[data-discipline]"), r.discipline);
 
     const link = li.querySelector("[data-link]");
     link.href = r.url || "#";
     link.innerHTML = highlight(r.title, state.q);
 
-    const authors = li.querySelector("[data-authors]");
-    authors.innerHTML = r.authors
-      ? highlight(r.authors.split(/;\s*/).slice(0, 4).join(" · "), state.q)
-      : '<span class="text-ink-400 dark:text-ink-500 italic">auteur·rice non renseigné</span>';
+    renderAuthorChips(li.querySelector("[data-authors]"), r.authors);
 
     const ab = li.querySelector("[data-abstract]");
     if (r.abstract) {
@@ -784,6 +850,7 @@ function renderActiveChips() {
   });
   for (const d of state.discipline) chips.push({ label: d, on: () => state.discipline.delete(d) });
   for (const s of state.source) chips.push({ label: s, on: () => state.source.delete(s) });
+  for (const a of state.author) chips.push({ label: a, on: () => state.author.delete(a) });
   if (state.year_min || state.year_max) chips.push({
     label: `${state.year_min || "…"} – ${state.year_max || "…"}`,
     on: () => { state.year_min = state.year_max = null; $("#year_min").value = ""; $("#year_max").value = ""; },
@@ -1074,7 +1141,7 @@ $("#disc-search").addEventListener("input", (e) => {
 
 $("#reset").addEventListener("click", () => {
   state.q = ""; state.type = ""; state.year_min = null; state.year_max = null;
-  state.discipline.clear(); state.source.clear(); state.sort = "relevance"; state.page = 1;
+  state.discipline.clear(); state.source.clear(); state.author.clear(); state.sort = "relevance"; state.page = 1;
   $("#q").value = ""; $("#year_min").value = ""; $("#year_max").value = "";
   $("#sort").value = "relevance";
   $("#q-clear").classList.add("hidden");
