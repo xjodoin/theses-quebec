@@ -13,6 +13,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
 tailwind.config = {
+  darkMode: 'class',
   theme: {
     extend: {
       fontFamily: {
@@ -50,9 +51,20 @@ tailwind.config = {
   },
 };
 </script>
+<script>
+  // Apply theme before paint to avoid flash-of-light: must run after the
+  // tailwind.config block (so darkMode:'class' is set) and before <body>.
+  (() => {
+    const stored = localStorage.getItem('tq:theme');
+    const sysDark = matchMedia('(prefers-color-scheme: dark)').matches;
+    const dark = stored ? stored === 'dark' : sysDark;
+    if (dark) document.documentElement.classList.add('dark');
+  })();
+</script>
 <style>
   body { font-feature-settings: "ss01", "cv11"; }
   mark { background: #fff1c4; color: inherit; padding: 0 1px; border-radius: 2px; font-weight: 500; }
+  .dark mark { background: #66480a; color: #fff8eb; }
   .clamp-3 {
     display: -webkit-box;
     -webkit-line-clamp: 3;
@@ -62,6 +74,8 @@ tailwind.config = {
   .scrollbar-thin::-webkit-scrollbar { width: 8px; }
   .scrollbar-thin::-webkit-scrollbar-thumb { background: #dadfe8; border-radius: 4px; }
   .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #b8c0d0; }
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb { background: #2a334a; }
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #404a64; }
   details > summary { list-style: none; cursor: pointer; }
   details > summary::-webkit-details-marker { display: none; }
   details[open] > summary .chevron { transform: rotate(90deg); }
@@ -76,39 +90,54 @@ tailwind.config = {
     background-size: 1000px 100%;
     animation: shimmer 1.6s infinite linear;
   }
+  .dark .skeleton {
+    background: linear-gradient(90deg, #2a334a 0%, #1a2238 50%, #2a334a 100%);
+    background-size: 1000px 100%;
+  }
 </style>
 </head>
-<body class="bg-ink-50 text-ink-900 font-sans antialiased min-h-screen">
+<body class="bg-ink-50 dark:bg-ink-900 text-ink-900 dark:text-ink-50 font-sans antialiased min-h-screen">
 
 <!-- ============== Header ============== -->
-<header class="sticky top-0 z-30 bg-white/85 backdrop-blur border-b border-ink-200">
+<header class="sticky top-0 z-30 bg-white/85 dark:bg-ink-900/85 backdrop-blur border-b border-ink-200 dark:border-ink-700">
   <div class="max-w-[1400px] mx-auto px-4 lg:px-8 py-4 flex items-center gap-4">
     <a href="/" class="flex items-center gap-3 group">
-      <div class="w-9 h-9 rounded-lg bg-ink-800 grid place-items-center text-white shadow-sm">
+      <div class="w-9 h-9 rounded-lg bg-ink-800 dark:bg-ink-700 grid place-items-center text-white shadow-sm">
         <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
           <path d="M8 7h8M8 11h8" stroke-linecap="round"/>
         </svg>
       </div>
       <div class="leading-tight">
-        <h1 class="font-serif text-xl font-semibold text-ink-900 group-hover:text-ink-700 transition">Thèses du Québec</h1>
-        <p class="text-xs text-ink-500">Recherche unifiée par discipline</p>
+        <h1 class="font-serif text-xl font-semibold text-ink-900 dark:text-ink-50 group-hover:text-ink-700 dark:group-hover:text-ink-200 transition">Thèses du Québec</h1>
+        <p class="text-xs text-ink-500 dark:text-ink-400">Recherche unifiée par discipline</p>
       </div>
     </a>
     <div class="ml-auto flex items-center gap-2 md:gap-3">
-      <div class="hidden md:flex items-center gap-2 text-xs text-ink-500" id="totals">
+      <div class="hidden md:flex items-center gap-2 text-xs text-ink-500 dark:text-ink-400" id="totals">
         <span class="skeleton inline-block w-32 h-4 rounded"></span>
       </div>
       <a href="https://github.com/xjodoin/theses-quebec" target="_blank" rel="noopener"
-         class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-ink-600 hover:text-ink-900 border border-ink-200 hover:border-ink-300 rounded-md transition"
+         class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-ink-600 dark:text-ink-300 hover:text-ink-900 dark:hover:text-ink-50 border border-ink-200 dark:border-ink-700 hover:border-ink-300 dark:hover:border-ink-600 rounded-md transition"
          aria-label="Code source sur GitHub" title="Logiciel libre · MIT">
         <svg viewBox="0 0 16 16" class="w-3.5 h-3.5" fill="currentColor">
           <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.15-.39-.55-.94-.95-1.09-.27-.14-.66-.5-.01-.51.61-.01 1.05.56 1.2.79.7 1.18 1.83.84 2.27.64.07-.5.27-.84.5-1.04-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
         </svg>
         GitHub
       </a>
+      <button id="theme-toggle" type="button"
+              class="inline-flex items-center justify-center w-8 h-8 rounded-md text-ink-500 hover:text-ink-900 dark:text-ink-400 dark:hover:text-ink-100 hover:bg-ink-100 dark:hover:bg-ink-700 transition"
+              aria-label="Basculer le thème sombre" title="Basculer le thème sombre">
+        <svg data-theme-icon="sun" viewBox="0 0 24 24" class="w-4 h-4 hidden dark:block" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+        </svg>
+        <svg data-theme-icon="moon" viewBox="0 0 24 24" class="w-4 h-4 block dark:hidden" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
       <button id="open-filters-mobile"
-              class="md:hidden inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium border border-ink-200 rounded-md hover:bg-ink-100">
+              class="md:hidden inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium border border-ink-200 dark:border-ink-700 rounded-md hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200">
         <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M3 6h18M6 12h12M10 18h4"/>
         </svg>
@@ -118,30 +147,30 @@ tailwind.config = {
   </div>
 
   <!-- search bar row -->
-  <div class="border-t border-ink-100">
+  <div class="border-t border-ink-100 dark:border-ink-700">
     <div class="max-w-[1400px] mx-auto px-4 lg:px-8 py-3 flex flex-wrap items-center gap-2">
       <label class="relative flex-1 min-w-[16rem]">
-        <svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" fill="none" stroke="currentColor" stroke-width="2">
+        <svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400 dark:text-ink-500" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/>
         </svg>
         <input id="q" type="search" autocomplete="off"
                placeholder="mots-clés, titre, auteur, sujet…  (raccourci : /)"
-               class="w-full pl-9 pr-9 py-2.5 bg-white border border-ink-200 rounded-md text-sm
+               class="w-full pl-9 pr-9 py-2.5 bg-white dark:bg-ink-800 text-ink-900 dark:text-ink-50 border border-ink-200 dark:border-ink-700 rounded-md text-sm
                       focus:outline-none focus:ring-2 focus:ring-accent-300 focus:border-accent-400
-                      placeholder:text-ink-400">
+                      placeholder:text-ink-400 dark:placeholder:text-ink-500">
         <kbd id="q-clear"
-             class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-xs text-ink-400 hover:text-ink-700 cursor-pointer px-1.5 py-0.5 border border-ink-200 rounded">
+             class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-xs text-ink-400 dark:text-ink-500 hover:text-ink-700 dark:hover:text-ink-200 cursor-pointer px-1.5 py-0.5 border border-ink-200 dark:border-ink-700 rounded">
           esc
         </kbd>
       </label>
 
-      <div class="inline-flex rounded-md border border-ink-200 bg-white text-sm overflow-hidden">
-        <button data-type="" class="type-btn px-3 py-2 hover:bg-ink-100 font-medium">Tous</button>
-        <button data-type="thesis" class="type-btn px-3 py-2 hover:bg-ink-100 border-l border-ink-200">Thèses</button>
-        <button data-type="memoire" class="type-btn px-3 py-2 hover:bg-ink-100 border-l border-ink-200">Mémoires</button>
+      <div class="inline-flex rounded-md border border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-800 text-sm overflow-hidden">
+        <button data-type="" class="type-btn px-3 py-2 hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200 font-medium">Tous</button>
+        <button data-type="thesis" class="type-btn px-3 py-2 hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200 border-l border-ink-200 dark:border-ink-700">Thèses</button>
+        <button data-type="memoire" class="type-btn px-3 py-2 hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200 border-l border-ink-200 dark:border-ink-700">Mémoires</button>
       </div>
 
-      <select id="sort" class="bg-white border border-ink-200 rounded-md px-3 py-2 text-sm
+      <select id="sort" class="bg-white dark:bg-ink-800 text-ink-900 dark:text-ink-50 border border-ink-200 dark:border-ink-700 rounded-md px-3 py-2 text-sm
                                 focus:outline-none focus:ring-2 focus:ring-accent-300">
         <option value="relevance">Pertinence</option>
         <option value="year_desc">Année (récent → ancien)</option>
@@ -151,20 +180,28 @@ tailwind.config = {
 
       <div class="hidden lg:flex items-center gap-1 text-sm">
         <input id="year_min" type="number" min="1900" max="2100" placeholder="depuis"
-               class="bg-white border border-ink-200 rounded-md px-2 py-2 w-20 focus:outline-none focus:ring-2 focus:ring-accent-300">
-        <span class="text-ink-400">→</span>
+               class="bg-white dark:bg-ink-800 text-ink-900 dark:text-ink-50 placeholder:text-ink-400 dark:placeholder:text-ink-500 border border-ink-200 dark:border-ink-700 rounded-md px-2 py-2 w-20 focus:outline-none focus:ring-2 focus:ring-accent-300">
+        <span class="text-ink-400 dark:text-ink-500">→</span>
         <input id="year_max" type="number" min="1900" max="2100" placeholder="jusqu'à"
-               class="bg-white border border-ink-200 rounded-md px-2 py-2 w-20 focus:outline-none focus:ring-2 focus:ring-accent-300">
+               class="bg-white dark:bg-ink-800 text-ink-900 dark:text-ink-50 placeholder:text-ink-400 dark:placeholder:text-ink-500 border border-ink-200 dark:border-ink-700 rounded-md px-2 py-2 w-20 focus:outline-none focus:ring-2 focus:ring-accent-300">
       </div>
     </div>
   </div>
 
   <!-- active filter chips -->
-  <div id="active-filters" class="hidden border-t border-ink-100 bg-ink-50/60">
+  <div id="active-filters" class="hidden border-t border-ink-100 dark:border-ink-700 bg-ink-50/60 dark:bg-ink-800/60">
     <div class="max-w-[1400px] mx-auto px-4 lg:px-8 py-2 flex flex-wrap items-center gap-2 text-xs">
-      <span class="text-ink-500 font-medium uppercase tracking-wide">Filtres actifs :</span>
+      <span class="text-ink-500 dark:text-ink-400 font-medium uppercase tracking-wide">Filtres actifs :</span>
       <div id="active-chips" class="flex flex-wrap gap-1.5"></div>
-      <button id="reset" class="ml-auto text-ink-500 hover:text-ink-900 hover:underline">tout effacer</button>
+      <button id="copy-link" type="button"
+              class="ml-auto inline-flex items-center gap-1 text-ink-500 dark:text-ink-400 hover:text-ink-900 dark:hover:text-ink-100 hover:underline">
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1 1"/>
+          <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1-1"/>
+        </svg>
+        <span data-copy-label>Copier le lien</span>
+      </button>
+      <button id="reset" class="text-ink-500 dark:text-ink-400 hover:text-ink-900 dark:hover:text-ink-100 hover:underline">tout effacer</button>
     </div>
   </div>
 </header>
@@ -176,49 +213,49 @@ tailwind.config = {
   <aside id="sidebar"
          class="col-span-12 md:col-span-4 lg:col-span-3
                 fixed md:sticky md:top-[7.25rem] inset-0 md:inset-auto z-40 md:z-auto
-                bg-white md:bg-transparent border-r md:border-0 border-ink-200
+                bg-white dark:bg-ink-900 md:bg-transparent md:dark:bg-transparent border-r md:border-0 border-ink-200 dark:border-ink-700
                 transform -translate-x-full md:translate-x-0 transition-transform duration-200
                 md:max-h-[calc(100vh-8rem)] overflow-y-auto scrollbar-thin">
-    <div class="md:hidden flex items-center justify-between p-4 border-b border-ink-200 bg-white sticky top-0">
-      <h2 class="font-serif font-semibold">Filtres</h2>
-      <button id="close-filters-mobile" class="text-ink-500 hover:text-ink-900 p-1">
+    <div class="md:hidden flex items-center justify-between p-4 border-b border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-900 sticky top-0">
+      <h2 class="font-serif font-semibold text-ink-900 dark:text-ink-50">Filtres</h2>
+      <button id="close-filters-mobile" class="text-ink-500 dark:text-ink-400 hover:text-ink-900 dark:hover:text-ink-100 p-1">
         <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6l-12 12" stroke-linecap="round"/></svg>
       </button>
     </div>
     <div class="p-4 md:p-0 space-y-1">
 
-      <details open class="group bg-white md:bg-transparent rounded-md md:rounded-none border md:border-0 border-ink-200 md:border-b md:border-b-ink-100 md:pb-3">
+      <details open class="group bg-white dark:bg-ink-800 md:bg-transparent md:dark:bg-transparent rounded-md md:rounded-none border md:border-0 border-ink-200 dark:border-ink-700 md:border-b md:border-b-ink-100 md:dark:border-b-ink-700 md:pb-3">
         <summary class="flex items-center px-3 md:px-1 py-2 select-none">
-          <svg class="chevron w-4 h-4 mr-1.5 text-ink-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6" stroke-linecap="round"/></svg>
-          <span class="text-xs font-semibold uppercase tracking-wider text-ink-700">Discipline</span>
-          <span id="disc-active" class="ml-auto hidden text-xs px-1.5 rounded-full bg-accent-100 text-accent-600 font-medium"></span>
+          <svg class="chevron w-4 h-4 mr-1.5 text-ink-400 dark:text-ink-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6" stroke-linecap="round"/></svg>
+          <span class="text-xs font-semibold uppercase tracking-wider text-ink-700 dark:text-ink-200">Discipline</span>
+          <span id="disc-active" class="ml-auto hidden text-xs px-1.5 rounded-full bg-accent-100 dark:bg-accent-500/20 text-accent-600 dark:text-accent-300 font-medium"></span>
         </summary>
         <div class="px-3 md:px-1 pb-3 space-y-2">
           <div class="relative">
-            <svg viewBox="0 0 24 24" class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-400" fill="none" stroke="currentColor" stroke-width="2">
+            <svg viewBox="0 0 24 24" class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-400 dark:text-ink-500" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/>
             </svg>
             <input id="disc-search" type="search" placeholder="filtrer les disciplines"
-                   class="w-full pl-7 pr-2 py-1.5 text-xs bg-ink-50 border border-ink-200 rounded
-                          focus:outline-none focus:bg-white focus:border-accent-400">
+                   class="w-full pl-7 pr-2 py-1.5 text-xs bg-ink-50 dark:bg-ink-800 text-ink-900 dark:text-ink-50 placeholder:text-ink-400 dark:placeholder:text-ink-500 border border-ink-200 dark:border-ink-700 rounded
+                          focus:outline-none focus:bg-white dark:focus:bg-ink-700 focus:border-accent-400">
           </div>
           <div id="facet-disciplines" class="space-y-px text-sm"></div>
         </div>
       </details>
 
-      <details open class="group bg-white md:bg-transparent rounded-md md:rounded-none border md:border-0 border-ink-200 md:border-b md:border-b-ink-100 md:pb-3">
+      <details open class="group bg-white dark:bg-ink-800 md:bg-transparent md:dark:bg-transparent rounded-md md:rounded-none border md:border-0 border-ink-200 dark:border-ink-700 md:border-b md:border-b-ink-100 md:dark:border-b-ink-700 md:pb-3">
         <summary class="flex items-center px-3 md:px-1 py-2 select-none">
-          <svg class="chevron w-4 h-4 mr-1.5 text-ink-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6" stroke-linecap="round"/></svg>
-          <span class="text-xs font-semibold uppercase tracking-wider text-ink-700">Université</span>
-          <span id="src-active" class="ml-auto hidden text-xs px-1.5 rounded-full bg-accent-100 text-accent-600 font-medium"></span>
+          <svg class="chevron w-4 h-4 mr-1.5 text-ink-400 dark:text-ink-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6" stroke-linecap="round"/></svg>
+          <span class="text-xs font-semibold uppercase tracking-wider text-ink-700 dark:text-ink-200">Université</span>
+          <span id="src-active" class="ml-auto hidden text-xs px-1.5 rounded-full bg-accent-100 dark:bg-accent-500/20 text-accent-600 dark:text-accent-300 font-medium"></span>
         </summary>
         <div id="facet-sources" class="px-3 md:px-1 pb-3 space-y-px text-sm"></div>
       </details>
 
-      <details open class="group bg-white md:bg-transparent rounded-md md:rounded-none border md:border-0 border-ink-200 md:border-b md:border-b-ink-100 md:pb-3">
+      <details open class="group bg-white dark:bg-ink-800 md:bg-transparent md:dark:bg-transparent rounded-md md:rounded-none border md:border-0 border-ink-200 dark:border-ink-700 md:border-b md:border-b-ink-100 md:dark:border-b-ink-700 md:pb-3">
         <summary class="flex items-center px-3 md:px-1 py-2 select-none">
-          <svg class="chevron w-4 h-4 mr-1.5 text-ink-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6" stroke-linecap="round"/></svg>
-          <span class="text-xs font-semibold uppercase tracking-wider text-ink-700">Décennie</span>
+          <svg class="chevron w-4 h-4 mr-1.5 text-ink-400 dark:text-ink-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6" stroke-linecap="round"/></svg>
+          <span class="text-xs font-semibold uppercase tracking-wider text-ink-700 dark:text-ink-200">Décennie</span>
         </summary>
         <div id="facet-decades" class="px-3 md:px-1 pb-3 space-y-px text-sm"></div>
       </details>
@@ -227,15 +264,15 @@ tailwind.config = {
 
   <!-- Backdrop for mobile drawer -->
   <div id="sidebar-backdrop"
-       class="fixed inset-0 bg-ink-900/40 z-30 hidden md:hidden"></div>
+       class="fixed inset-0 bg-ink-900/40 dark:bg-black/60 z-30 hidden md:hidden"></div>
 
   <!-- ============== Results ============== -->
   <section class="col-span-12 md:col-span-8 lg:col-span-9 min-w-0">
     <div class="flex items-baseline justify-between gap-4 mb-4">
-      <p id="status" class="text-sm text-ink-600">
+      <p id="status" class="text-sm text-ink-600 dark:text-ink-300">
         <span class="skeleton inline-block w-32 h-4 rounded align-middle"></span>
       </p>
-      <p class="hidden sm:block text-xs text-ink-400" id="page-info"></p>
+      <p class="hidden sm:block text-xs text-ink-400 dark:text-ink-500" id="page-info"></p>
     </div>
 
     <ul id="results" class="space-y-3"></ul>
@@ -245,12 +282,12 @@ tailwind.config = {
 </main>
 
 <!-- ============== Footer ============== -->
-<footer class="border-t border-ink-200 mt-12 bg-white">
+<footer class="border-t border-ink-200 dark:border-ink-700 mt-12 bg-white dark:bg-ink-800">
   <div class="max-w-[1400px] mx-auto px-4 lg:px-8 py-10">
     <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-8 text-sm">
       <div>
-        <h3 class="font-serif font-semibold text-ink-900 mb-3 text-base">Thèses du Québec</h3>
-        <p class="text-ink-600 leading-relaxed">
+        <h3 class="font-serif font-semibold text-ink-900 dark:text-ink-50 mb-3 text-base">Thèses du Québec</h3>
+        <p class="text-ink-600 dark:text-ink-300 leading-relaxed">
           Agrégateur des dépôts institutionnels québécois. Métadonnées
           moissonnées via OAI-PMH, classification disciplinaire assistée par
           LLM, recherche unifiée par discipline.
@@ -258,25 +295,25 @@ tailwind.config = {
       </div>
 
       <div>
-        <h3 class="font-semibold text-ink-700 uppercase tracking-wider text-xs mb-3">
+        <h3 class="font-semibold text-ink-700 dark:text-ink-200 uppercase tracking-wider text-xs mb-3">
           Dépôts moissonnés
         </h3>
-        <p id="footer-sources" class="text-ink-600 leading-relaxed text-xs">…</p>
-        <p class="mt-3 text-xs text-ink-400">
+        <p id="footer-sources" class="text-ink-600 dark:text-ink-300 leading-relaxed text-xs">…</p>
+        <p class="mt-3 text-xs text-ink-400 dark:text-ink-500">
           Métadonnées : © universités respectives. Voir
-          <a class="hover:text-ink-700 underline"
+          <a class="hover:text-ink-700 dark:hover:text-ink-200 underline"
              href="https://github.com/xjodoin/theses-quebec/blob/main/NOTICE"
              target="_blank" rel="noopener">NOTICE</a>.
         </p>
       </div>
 
       <div>
-        <h3 class="font-semibold text-ink-700 uppercase tracking-wider text-xs mb-3">
+        <h3 class="font-semibold text-ink-700 dark:text-ink-200 uppercase tracking-wider text-xs mb-3">
           Logiciel libre · Données ouvertes
         </h3>
-        <ul class="space-y-2 text-ink-600">
+        <ul class="space-y-2 text-ink-600 dark:text-ink-300">
           <li>
-            <a class="inline-flex items-center gap-2 hover:text-ink-900 transition"
+            <a class="inline-flex items-center gap-2 hover:text-ink-900 dark:hover:text-ink-100 transition"
                href="https://github.com/xjodoin/theses-quebec"
                target="_blank" rel="noopener">
               <svg viewBox="0 0 16 16" class="w-4 h-4 shrink-0" fill="currentColor">
@@ -286,17 +323,17 @@ tailwind.config = {
             </a>
           </li>
           <li>
-            <a class="inline-flex items-center gap-2 hover:text-ink-900 transition"
+            <a class="inline-flex items-center gap-2 hover:text-ink-900 dark:hover:text-ink-100 transition"
                href="https://xjodoin.github.io/theses-quebec/search.json"
                target="_blank" rel="noopener">
               <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              <span>Télécharger l'index <code class="text-xs bg-ink-100 px-1 rounded">search.json</code></span>
+              <span>Télécharger l'index <code class="text-xs bg-ink-100 dark:bg-ink-700 dark:text-ink-100 px-1 rounded">search.json</code></span>
             </a>
           </li>
           <li>
-            <a class="inline-flex items-center gap-2 hover:text-ink-900 transition"
+            <a class="inline-flex items-center gap-2 hover:text-ink-900 dark:hover:text-ink-100 transition"
                href="https://github.com/xjodoin/theses-quebec/blob/main/LICENSE"
                target="_blank" rel="noopener">
               <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2">
@@ -306,7 +343,7 @@ tailwind.config = {
             </a>
           </li>
           <li>
-            <a class="inline-flex items-center gap-2 hover:text-ink-900 transition"
+            <a class="inline-flex items-center gap-2 hover:text-ink-900 dark:hover:text-ink-100 transition"
                href="https://github.com/xjodoin/theses-quebec/issues/new/choose"
                target="_blank" rel="noopener">
               <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2">
@@ -317,7 +354,7 @@ tailwind.config = {
             </a>
           </li>
           <li>
-            <a class="inline-flex items-center gap-2 hover:text-ink-900 transition"
+            <a class="inline-flex items-center gap-2 hover:text-ink-900 dark:hover:text-ink-100 transition"
                href="https://github.com/xjodoin/theses-quebec/blob/main/CONTRIBUTING.md"
                target="_blank" rel="noopener">
               <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2">
@@ -330,20 +367,20 @@ tailwind.config = {
       </div>
     </div>
 
-    <div class="mt-8 pt-6 border-t border-ink-100 flex flex-wrap items-center justify-between gap-4 text-xs text-ink-400">
+    <div class="mt-8 pt-6 border-t border-ink-100 dark:border-ink-700 flex flex-wrap items-center justify-between gap-4 text-xs text-ink-400 dark:text-ink-500">
       <p>
         Construit avec
-        <a class="hover:text-ink-700 underline"
+        <a class="hover:text-ink-700 dark:hover:text-ink-200 underline"
            href="https://www.openarchives.org/pmh/" target="_blank" rel="noopener">OAI-PMH</a>,
-        <a class="hover:text-ink-700 underline"
+        <a class="hover:text-ink-700 dark:hover:text-ink-200 underline"
            href="https://fastapi.tiangolo.com/" target="_blank" rel="noopener">FastAPI</a>,
-        <a class="hover:text-ink-700 underline"
+        <a class="hover:text-ink-700 dark:hover:text-ink-200 underline"
            href="https://www.sqlite.org/fts5.html" target="_blank" rel="noopener">SQLite FTS5</a>,
-        <a class="hover:text-ink-700 underline"
+        <a class="hover:text-ink-700 dark:hover:text-ink-200 underline"
            href="https://tailwindcss.com/" target="_blank" rel="noopener">Tailwind CSS</a>.
       </p>
       <p>
-        <a class="hover:text-ink-700 underline"
+        <a class="hover:text-ink-700 dark:hover:text-ink-200 underline"
            href="https://xjodoin.github.io/theses-quebec/"
            target="_blank" rel="noopener">Démo Pages →</a>
       </p>
@@ -353,27 +390,27 @@ tailwind.config = {
 
 <!-- ============== Templates ============== -->
 <template id="tmpl-result">
-  <li class="group bg-white border border-ink-200 rounded-lg p-4 sm:p-5
-             hover:border-ink-300 hover:shadow-card-hover shadow-card transition-all">
+  <li class="group bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 rounded-lg p-4 sm:p-5
+             hover:border-ink-300 dark:hover:border-ink-600 hover:shadow-card-hover shadow-card transition-all">
     <div class="flex items-start gap-4">
       <div class="flex-1 min-w-0">
         <div class="flex flex-wrap items-center gap-2 mb-1.5">
           <span data-type-badge class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide"></span>
-          <span data-discipline class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-ink-100 text-ink-700"></span>
+          <span data-discipline class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-ink-100 dark:bg-ink-700 text-ink-700 dark:text-ink-200"></span>
         </div>
         <h3>
           <a data-link target="_blank" rel="noopener"
-             class="font-serif text-[1.0625rem] sm:text-lg font-semibold text-ink-900 hover:text-accent-500 transition leading-snug block">
+             class="font-serif text-[1.0625rem] sm:text-lg font-semibold text-ink-900 dark:text-ink-50 hover:text-accent-500 dark:hover:text-accent-300 transition leading-snug block">
           </a>
         </h3>
-        <p data-authors class="text-sm text-ink-600 mt-1"></p>
-        <p data-abstract class="text-sm text-ink-700 mt-2 clamp-3"></p>
+        <p data-authors class="text-sm text-ink-600 dark:text-ink-300 mt-1"></p>
+        <p data-abstract class="text-sm text-ink-700 dark:text-ink-200 mt-2 clamp-3"></p>
       </div>
       <div class="hidden sm:flex flex-col items-end shrink-0 text-right text-xs">
-        <span data-source class="font-semibold text-ink-700"></span>
-        <span data-year class="text-ink-500 mt-0.5"></span>
+        <span data-source class="font-semibold text-ink-700 dark:text-ink-200"></span>
+        <span data-year class="text-ink-500 dark:text-ink-400 mt-0.5"></span>
         <a data-open target="_blank" rel="noopener"
-           class="mt-3 inline-flex items-center gap-1 text-accent-500 hover:text-accent-600 font-medium opacity-0 group-hover:opacity-100 transition">
+           class="mt-3 inline-flex items-center gap-1 text-accent-500 hover:text-accent-600 dark:text-accent-300 dark:hover:text-accent-200 font-medium opacity-0 group-hover:opacity-100 transition">
           ouvrir
           <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17l10-10M9 7h8v8" stroke-linecap="round"/></svg>
         </a>
@@ -383,7 +420,7 @@ tailwind.config = {
 </template>
 
 <template id="tmpl-skeleton">
-  <li class="bg-white border border-ink-200 rounded-lg p-5 space-y-3">
+  <li class="bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 rounded-lg p-5 space-y-3">
     <div class="flex gap-2"><div class="skeleton h-4 w-16 rounded"></div><div class="skeleton h-4 w-32 rounded"></div></div>
     <div class="skeleton h-5 w-3/4 rounded"></div>
     <div class="skeleton h-4 w-1/3 rounded"></div>
@@ -459,16 +496,16 @@ function fmt(n) { return n.toLocaleString("fr-CA"); }
 
 // Type badge styles — visually distinct but not loud
 const TYPE_STYLES = {
-  thesis:  { label: "Thèse",   cls: "bg-violet-100 text-violet-800" },
-  memoire: { label: "Mémoire", cls: "bg-sky-100 text-sky-800" },
+  thesis:  { label: "Thèse",   cls: "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200" },
+  memoire: { label: "Mémoire", cls: "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200" },
 };
 
 // ===== Rendering ============================================================
 function renderTotals(totalRecords, sources) {
   $("#totals").innerHTML = `
-    <span class="font-medium text-ink-700">${fmt(totalRecords)}</span> thèses
-    <span class="text-ink-300 mx-1.5">·</span>
-    <span class="font-medium text-ink-700">${sources.length}</span> dépôts
+    <span class="font-medium text-ink-700 dark:text-ink-200">${fmt(totalRecords)}</span> thèses
+    <span class="text-ink-300 dark:text-ink-600 mx-1.5">·</span>
+    <span class="font-medium text-ink-700 dark:text-ink-200">${sources.length}</span> dépôts
   `;
   $("#footer-sources").textContent =
     sources.map(s => s.source_name).join(" · ");
@@ -486,14 +523,14 @@ function renderResults(data, opts = {}) {
 
   if (!data.results.length) {
     ul.innerHTML = `
-      <li class="bg-white border border-dashed border-ink-300 rounded-lg p-8 text-center">
-        <div class="w-12 h-12 mx-auto rounded-full bg-ink-100 grid place-items-center text-ink-400 mb-3">
+      <li class="bg-white dark:bg-ink-800 border border-dashed border-ink-300 dark:border-ink-700 rounded-lg p-8 text-center">
+        <div class="w-12 h-12 mx-auto rounded-full bg-ink-100 dark:bg-ink-700 grid place-items-center text-ink-400 mb-3">
           <svg viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/></svg>
         </div>
-        <p class="font-medium text-ink-700">Aucun résultat</p>
-        <p class="text-sm text-ink-500 mt-1">Essayez d'élargir vos critères ou utilisez d'autres mots-clés.</p>
+        <p class="font-medium text-ink-700 dark:text-ink-200">Aucun résultat</p>
+        <p class="text-sm text-ink-500 dark:text-ink-400 mt-1">Essayez d'élargir vos critères ou utilisez d'autres mots-clés.</p>
         <button onclick="document.getElementById('reset').click()"
-                class="mt-4 text-sm font-medium text-accent-500 hover:text-accent-600">
+                class="mt-4 text-sm font-medium text-accent-500 hover:text-accent-600 dark:text-accent-300 dark:hover:text-accent-200">
           Réinitialiser la recherche →
         </button>
       </li>`;
@@ -505,7 +542,7 @@ function renderResults(data, opts = {}) {
     const node = tpl.content.cloneNode(true);
     const li = node.querySelector("li");
 
-    const typeStyle = TYPE_STYLES[r.type] || { label: r.type || "Document", cls: "bg-ink-100 text-ink-700" };
+    const typeStyle = TYPE_STYLES[r.type] || { label: r.type || "Document", cls: "bg-ink-100 dark:bg-ink-700 text-ink-700 dark:text-ink-200" };
     const typeBadge = li.querySelector("[data-type-badge]");
     typeBadge.textContent = typeStyle.label;
     typeBadge.className = typeBadge.className + " " + typeStyle.cls;
@@ -520,7 +557,7 @@ function renderResults(data, opts = {}) {
     const authors = li.querySelector("[data-authors]");
     authors.innerHTML = r.authors
       ? highlight(r.authors.split(/;\s*/).slice(0, 4).join(" · "), state.q)
-      : '<span class="text-ink-400 italic">auteur·rice non renseigné</span>';
+      : '<span class="text-ink-400 dark:text-ink-500 italic">auteur·rice non renseigné</span>';
 
     const ab = li.querySelector("[data-abstract]");
     if (r.abstract) {
@@ -553,9 +590,9 @@ function renderPager(data) {
     b.disabled = disabled;
     if (ariaLabel) b.setAttribute("aria-label", ariaLabel);
     b.className = "min-w-[2.25rem] h-9 px-3 rounded-md text-sm font-medium transition " +
-      (active ? "bg-ink-900 text-white shadow-card"
-              : disabled ? "text-ink-300 cursor-not-allowed"
-                         : "text-ink-700 hover:bg-ink-100");
+      (active ? "bg-ink-900 dark:bg-ink-50 text-white dark:text-ink-900 shadow-card"
+              : disabled ? "text-ink-300 dark:text-ink-600 cursor-not-allowed"
+                         : "text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700");
     if (!disabled && !active) {
       b.onclick = () => { state.page = page; runSearch(); window.scrollTo({ top: 0, behavior: "smooth" }); };
     }
@@ -571,7 +608,7 @@ function renderPager(data) {
   const sorted = [...pages].sort((a, b) => a - b);
   let prev = 0;
   for (const p of sorted) {
-    if (p - prev > 1) pager.appendChild(Object.assign(document.createElement("span"), { textContent: "…", className: "px-1 text-ink-400" }));
+    if (p - prev > 1) pager.appendChild(Object.assign(document.createElement("span"), { textContent: "…", className: "px-1 text-ink-400 dark:text-ink-500" }));
     pager.appendChild(mk(p, p, { active: p === data.page, ariaLabel: `Page ${p}` }));
     prev = p;
   }
@@ -600,7 +637,7 @@ function renderFacets(facets) {
   }
   if (all.length > 8) {
     const btn = document.createElement("button");
-    btn.className = "text-xs text-accent-500 hover:text-accent-600 font-medium px-2 py-1 mt-1";
+    btn.className = "text-xs text-accent-500 hover:text-accent-600 dark:text-accent-300 dark:hover:text-accent-200 font-medium px-2 py-1 mt-1";
     btn.textContent = facetState.discShowAll
       ? "↑ moins de disciplines"
       : `+ ${all.length - 8} de plus`;
@@ -608,7 +645,7 @@ function renderFacets(facets) {
     el.appendChild(btn);
   }
   if (!all.length) {
-    el.innerHTML = `<p class="text-xs text-ink-400 italic px-2">Aucune discipline correspondant à "${escapeHTML(facetState.discFilter)}"</p>`;
+    el.innerHTML = `<p class="text-xs text-ink-400 dark:text-ink-500 italic px-2">Aucune discipline correspondant à "${escapeHTML(facetState.discFilter)}"</p>`;
   }
   updateFacetBadge("#disc-active", state.discipline.size);
 
@@ -622,7 +659,7 @@ function renderFacets(facets) {
   }
   if (sources.length > 8) {
     const btn = document.createElement("button");
-    btn.className = "text-xs text-accent-500 hover:text-accent-600 font-medium px-2 py-1 mt-1";
+    btn.className = "text-xs text-accent-500 hover:text-accent-600 dark:text-accent-300 dark:hover:text-accent-200 font-medium px-2 py-1 mt-1";
     btn.textContent = facetState.srcShowAll
       ? "↑ moins"
       : `+ ${sources.length - 8} dépôts`;
@@ -639,11 +676,11 @@ function renderFacets(facets) {
     const active = state.year_min === start && state.year_max === start + 9;
     const b = document.createElement("button");
     b.className = "w-full flex items-center px-2 py-1 rounded text-left transition " +
-                  (active ? "bg-ink-800 text-white"
-                          : "hover:bg-ink-100 text-ink-700");
+                  (active ? "bg-ink-800 dark:bg-ink-600 text-white"
+                          : "hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200");
     b.innerHTML = `
       <span class="flex-1">${d.name}</span>
-      <span class="text-xs ${active ? "text-ink-300" : "text-ink-400"} tabular-nums">${fmt(d.n)}</span>`;
+      <span class="text-xs ${active ? "text-ink-300" : "text-ink-400 dark:text-ink-500"} tabular-nums">${fmt(d.n)}</span>`;
     b.onclick = () => {
       if (active) { state.year_min = state.year_max = null; }
       else { state.year_min = start; state.year_max = start + 9; }
@@ -660,12 +697,12 @@ function facetRow(value, count, set, key, label = value) {
   const id = `${key}-${value}`.replace(/\W+/g, "-");
   const checked = set.has(value);
   const row = document.createElement("label");
-  row.className = "flex items-center gap-2 px-2 py-1 rounded cursor-pointer hover:bg-ink-100 group";
+  row.className = "flex items-center gap-2 px-2 py-1 rounded cursor-pointer hover:bg-ink-100 dark:hover:bg-ink-700 group";
   row.innerHTML = `
     <input type="checkbox" id="${id}" ${checked ? "checked" : ""}
-           class="rounded border-ink-300 text-accent-500 focus:ring-accent-300 focus:ring-offset-0">
-    <span class="flex-1 min-w-0 truncate ${checked ? "font-medium text-ink-900" : "text-ink-700"}">${escapeHTML(label)}</span>
-    <span class="text-xs ${checked ? "text-accent-500 font-medium" : "text-ink-400"} tabular-nums">${fmt(count)}</span>`;
+           class="rounded border-ink-300 dark:border-ink-600 dark:bg-ink-800 text-accent-500 focus:ring-accent-300 focus:ring-offset-0">
+    <span class="flex-1 min-w-0 truncate ${checked ? "font-medium text-ink-900 dark:text-ink-50" : "text-ink-700 dark:text-ink-200"}">${escapeHTML(label)}</span>
+    <span class="text-xs ${checked ? "text-accent-500 dark:text-accent-300 font-medium" : "text-ink-400 dark:text-ink-500"} tabular-nums">${fmt(count)}</span>`;
   row.querySelector("input").onchange = (ev) => {
     if (ev.target.checked) set.add(value);
     else set.delete(value);
@@ -701,8 +738,8 @@ function renderActiveChips() {
 
   for (const c of chips) {
     const b = document.createElement("button");
-    b.className = "inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-white border border-ink-200 hover:border-ink-300 text-ink-700 text-xs";
-    b.innerHTML = `${escapeHTML(c.label)}<span class="text-ink-400">×</span>`;
+    b.className = "inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 hover:border-ink-300 dark:hover:border-ink-600 text-ink-700 dark:text-ink-200 text-xs";
+    b.innerHTML = `${escapeHTML(c.label)}<span class="text-ink-400 dark:text-ink-500">×</span>`;
     b.onclick = () => { c.on(); state.page = 1; runSearch(); };
     container.appendChild(b);
   }
@@ -714,8 +751,10 @@ function updateTypeButtons() {
   $$(".type-btn").forEach(b => {
     const active = (b.dataset.type === state.type);
     b.classList.toggle("bg-ink-800", active);
+    b.classList.toggle("dark:bg-ink-600", active);
     b.classList.toggle("text-white", active);
     b.classList.toggle("hover:bg-ink-100", !active);
+    b.classList.toggle("dark:hover:bg-ink-700", !active);
   });
 }
 
@@ -742,12 +781,12 @@ async function runSearch() {
     renderPager(s);
     renderFacets(f);
     $("#status").innerHTML =
-      `<span class="font-medium text-ink-900">${fmt(s.total)}</span> ` +
+      `<span class="font-medium text-ink-900 dark:text-ink-50">${fmt(s.total)}</span> ` +
       `${s.total > 1 ? "résultats" : "résultat"}` +
-      (state.q ? ` pour <span class="text-ink-900">« ${escapeHTML(state.q)} »</span>` : "");
+      (state.q ? ` pour <span class="text-ink-900 dark:text-ink-50">« ${escapeHTML(state.q)} »</span>` : "");
   } catch (e) {
     if (my !== inflight) return;
-    $("#status").innerHTML = `<span class="text-red-600">Erreur de connexion à l'API</span>`;
+    $("#status").innerHTML = `<span class="text-red-600 dark:text-red-400">Erreur de connexion à l'API</span>`;
     $("#results").innerHTML = "";
     console.error(e);
   }
@@ -816,6 +855,24 @@ window.addEventListener("keydown", (e) => {
     $("#q").blur();
     if ($("#q").value) { $("#q").value = ""; state.q = ""; state.page = 1; runSearch(); }
   }
+});
+
+$("#theme-toggle").addEventListener("click", () => {
+  const isDark = document.documentElement.classList.toggle("dark");
+  localStorage.setItem("tq:theme", isDark ? "dark" : "light");
+});
+
+let copyTimer;
+$("#copy-link").addEventListener("click", async () => {
+  const label = $("#copy-link [data-copy-label]");
+  try {
+    await navigator.clipboard.writeText(location.href);
+    label.textContent = "Copié !";
+  } catch {
+    label.textContent = "Échec";
+  }
+  clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => { label.textContent = "Copier le lien"; }, 1500);
 });
 
 // Sync URL → form on load
