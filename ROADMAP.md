@@ -3,6 +3,10 @@
 État au 26 avril 2026. Document vivant : ouvre une PR pour proposer un
 ajout, ou réagis dans une issue pour discuter d'une priorité.
 
+**v0.2 livrée le 26 avril 2026** — Sprint 1 quasi complet (1.1 à 1.6),
+plus 2.3 (investigué) et 3.1 (24 tests). Le seul item Sprint 1 restant
+est 1.7 (highlight diacritiques-aware, faible valeur).
+
 **Légende**
 
 - **Effort** : `S` ≤ 4 h · `M` ½–2 jours · `L` une semaine et plus
@@ -17,12 +21,12 @@ ajout, ou réagis dans une issue pour discuter d'une priorité.
 
 | # | Amélioration | Effort | Valeur | Statut |
 |---|---|---|---|---|
-| 1.1 | **Vue détail par thèse** — modal au clic d'une carte, abstract complet, tous les champs DC, lien vers le PDF source. | M | ✶✶✶ | ⏳ |
-| 1.2 | **Export citation** — bouton « Copier la citation » dans le détail (BibTeX, APA, RIS). | S | ✶✶✶ | ⏳ |
-| 1.3 | **Auteur cliquable** — clic sur un nom → filtre par auteur. Stockage : facette dédiée. | S | ✶✶✶ | ⏳ |
-| 1.4 | **Discipline cliquable** sur les cartes — clic sur la pill → sélectionne la facette. | S | ✶✶ | ⏳ |
-| 1.5 | **Mode sombre** — `dark:` Tailwind + toggle dans le header. Respect `prefers-color-scheme`. | S | ✶✶ | ⏳ |
-| 1.6 | **Bouton « Copier le lien »** — visible quand des filtres sont actifs. URL est déjà sync, juste rendre le geste explicite. | S | ✶ | ⏳ |
+| 1.1 | **Vue détail par thèse** — modal au clic d'une carte, abstract complet, tous les champs DC, lien vers le PDF source. | M | ✶✶✶ | ✅ `738434a` |
+| 1.2 | **Export citation** — bouton « Copier la citation » dans le détail (BibTeX, APA, RIS). | S | ✶✶✶ | ✅ `738434a` |
+| 1.3 | **Auteur cliquable** — clic sur un nom → filtre par auteur. Stockage : facette dédiée. | S | ✶✶✶ | ✅ `208a4bf` |
+| 1.4 | **Discipline cliquable** sur les cartes — clic sur la pill → sélectionne la facette. | S | ✶✶ | ✅ `208a4bf` |
+| 1.5 | **Mode sombre** — `dark:` Tailwind + toggle dans le header. Respect `prefers-color-scheme`. | S | ✶✶ | ✅ `229ff0c` |
+| 1.6 | **Bouton « Copier le lien »** — visible quand des filtres sont actifs. URL est déjà sync, juste rendre le geste explicite. | S | ✶ | ✅ `229ff0c` |
 | 1.7 | **Surlignage diacritiques-aware** — actuellement le `<mark>` rate les variantes accentuées. Index par char-pos pour highlighter exact. | S | ✶ | ⏳ |
 
 ---
@@ -47,7 +51,7 @@ ajout, ou réagis dans une issue pour discuter d'une priorité.
 
 | # | Amélioration | Effort | Valeur | Statut |
 |---|---|---|---|---|
-| 3.1 | **Tests Python** — `pytest` sur `normalize.py` (extraction année, type), `classify.py` (mots-clés). Ajouter à `ci.yml`. | S | ✶✶ | ⏳ |
+| 3.1 | **Tests Python** — `pytest` sur `normalize.py` (extraction année, type), `classify.py` (mots-clés). Ajouter à `ci.yml`. | S | ✶✶ | ✅ `e00c3b3` (24 tests) |
 | 3.2 | **Audit accessibilité** — ARIA labels sur facettes/pagination, traversée clavier des résultats, contraste. Test lighthouse. | M | ✶✶ | ⏳ |
 | 3.3 | **i18n EN** — toggle FR/EN dans le header. Interface uniquement, pas de traduction des résumés. | M | ✶ | ⏳ |
 | 3.4 | **OGP / cartes sociales** — `<meta>` pour partages X/Bluesky/LinkedIn. Capture statique du site. | S | ✶ | ⏳ |
@@ -105,16 +109,27 @@ ajout, ou réagis dans une issue pour discuter d'une priorité.
 
 ---
 
-## Priorités proposées (ma recommandation)
+## v0.2 — livrée ✅
 
-Si je devais sortir un v0.2 dans la semaine, je piquerais dans cet ordre :
+1. **1.1** Vue détail — ✅
+2. **1.2** Export citation — ✅
+3. **1.3** Auteur cliquable — ✅
+4. **1.4** Discipline cliquable — ✅
+5. **1.5** Mode sombre — ✅
+6. **1.6** Copier le lien — ✅
+7. **2.3** Érudit — ✅ investigué (n'expose que des articles, théses fédérées depuis dépôts déjà couverts)
+8. **3.1** Tests Python — ✅ 24 tests
 
-1. **1.1** Vue détail
-2. **1.2** Export citation (clip BibTeX)
-3. **1.3** Auteur cliquable
-4. **1.5** Mode sombre
-5. **3.1** Tests Python (consolide avant les changements profonds)
-6. **2.1 + 2.2** Lever le cap, migrer Pagefind (saut quantitatif)
-7. **2.3** Ajouter Érudit (boucle la promesse initiale)
+## v0.3 — proposition (saut quantitatif sur les données)
 
-Tout le reste peut suivre selon les retours d'usage.
+1. **2.1** Lever le cap 500/source → ~50 000 records
+2. **2.2** Migrer vers Pagefind (forcé par 2.1)
+3. **2.4** Étendre la taxonomie disciplinaire (33 → 60+)
+4. **3.2** Audit a11y
+5. **3.5** Sitemap + JSON-LD Dataset
+
+## v0.4 — propositions ouvertes
+
+- **2.6** Dépôts canadiens hors-Québec (rebrand `theses-canada`)
+- **5.1** Recherche sémantique (embeddings)
+- **4.5** Dataset sur HuggingFace
