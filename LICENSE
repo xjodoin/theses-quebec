@@ -19,11 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-Note on harvested metadata
---------------------------
-This project aggregates publicly available bibliographic metadata from Quebec
-institutional repositories via OAI-PMH. The metadata remains the property of
-each contributing institution and is governed by their respective open-access
-and re-use policies. The MIT license above applies only to the source code in
-this repository, not to the harvested records.

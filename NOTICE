@@ -1,0 +1,30 @@
+theses-quebec
+==============
+
+The MIT license in LICENSE applies to the source code in this repository.
+
+The harvested bibliographic metadata stored in data/theses.db is collected
+from publicly available OAI-PMH endpoints of Quebec institutional repositories.
+The metadata remains the property of each contributing institution and is
+governed by their respective open-access and re-use policies.
+
+Sources harvested
+-----------------
+  - Concordia University (Spectrum)        — EPrints
+  - Université de Montréal (Papyrus)       — DSpace 7 / Scholaris
+  - Université de Sherbrooke (Savoirs UdeS)— DSpace 7 / Scholaris
+  - Bishop's University (IRis)             — DSpace 7 / Scholaris
+  - UQAM (Archipel)                        — EPrints
+  - UQTR (Cognitio)                        — EPrints
+  - UQAC (Constellation)                   — EPrints
+  - UQAR (Sémaphore)                       — EPrints
+  - UQO (Dépôt institutionnel)             — EPrints
+  - UQAT (Depositum)                       — EPrints
+  - INRS (EspaceINRS)                      — EPrints
+  - ÉTS (Espace ETS)                       — EPrints
+  - TÉLUQ (R-Libre)                        — EPrints
+  - Université Laval (Corpus UL)           — DSpace 7
+  - McGill University (eScholarship)       — Hyrax / Blacklight
+
+Per-record provenance is preserved in the `source_id` column of the database;
+the `url` column points back to the original landing page on each repository.
