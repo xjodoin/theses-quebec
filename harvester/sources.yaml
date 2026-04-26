@@ -1,0 +1,91 @@
+# Quebec institutional repositories — all speak OAI-PMH 2.0.
+# We harvest oai_dc and filter by dc:type=Thesis on ingest.
+#
+# Two platforms dominate Quebec:
+#   - EPrints: /cgi/oai2  (UQAM, UQTR, UQAC, UQAR, UQO, UQAT, INRS, ÉTS, R-Libre, Concordia)
+#   - DSpace 7 / Scholaris: /server/oai/request  (UdeM, Bishop's, Sherbrooke)
+
+- id: concordia
+  name: Concordia University (Spectrum)
+  short: Concordia
+  platform: eprints
+  base_url: https://spectrum.library.concordia.ca/cgi/oai2
+
+- id: udem
+  name: Université de Montréal (Papyrus)
+  short: UdeM
+  platform: dspace
+  base_url: https://umontreal.scholaris.ca/server/oai/request
+
+- id: usherbrooke
+  name: Université de Sherbrooke (Savoirs UdeS)
+  short: Sherbrooke
+  platform: dspace
+  base_url: https://usherbrooke.scholaris.ca/server/oai/request
+
+- id: bishops
+  name: Bishop's University (IRis)
+  short: Bishop's
+  platform: dspace
+  base_url: https://ubishops.scholaris.ca/server/oai/request
+
+- id: uqam
+  name: UQAM (Archipel)
+  short: UQAM
+  platform: eprints
+  base_url: https://archipel.uqam.ca/cgi/oai2
+
+- id: uqtr
+  name: UQTR (Cognitio)
+  short: UQTR
+  platform: eprints
+  base_url: https://depot-e.uqtr.ca/cgi/oai2
+
+- id: uqac
+  name: UQAC (Constellation)
+  short: UQAC
+  platform: eprints
+  base_url: https://constellation.uqac.ca/cgi/oai2
+
+- id: uqar
+  name: UQAR (Sémaphore)
+  short: UQAR
+  platform: eprints
+  base_url: https://semaphore.uqar.ca/cgi/oai2
+
+- id: uqo
+  name: UQO (Dépôt institutionnel)
+  short: UQO
+  platform: eprints
+  base_url: https://di.uqo.ca/cgi/oai2
+
+- id: uqat
+  name: UQAT (Depositum)
+  short: UQAT
+  platform: eprints
+  base_url: https://depositum.uqat.ca/cgi/oai2
+
+- id: inrs
+  name: INRS (EspaceINRS)
+  short: INRS
+  platform: eprints
+  base_url: https://espace.inrs.ca/cgi/oai2
+
+- id: ets
+  name: ÉTS (Espace ETS)
+  short: ÉTS
+  platform: eprints
+  base_url: https://espace.etsmtl.ca/cgi/oai2
+
+- id: rlibre
+  name: TÉLUQ (R-Libre)
+  short: TÉLUQ
+  platform: eprints
+  base_url: https://r-libre.teluq.ca/cgi/oai2
+
+- id: laval
+  name: Université Laval (Corpus UL)
+  short: Laval
+  platform: dspace
+  base_url: https://corpus.ulaval.ca/oai/request
+  set: col_20.500.11794_17461   # collection « Thèses et mémoires »

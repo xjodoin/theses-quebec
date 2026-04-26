@@ -1,0 +1,21 @@
+# secrets
+.env
+*.env.local
+
+# python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# project scratch — *not* the harvested DB itself, which is tracked via LFS
+data/llm_jobs/
+data/llm_preview.jsonl
+data/theses.db-journal
+data/theses.db-wal
+data/theses.db-shm
+
+# tooling caches
+.playwright-mcp/
+.claude/
+/tmp/
