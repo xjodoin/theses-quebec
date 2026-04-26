@@ -15,7 +15,7 @@
 
 import Database from "better-sqlite3";
 import MiniSearch from "minisearch";
-import { mkdirSync, writeFileSync, copyFileSync, statSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -117,8 +117,39 @@ const meta = {
 writeFileSync(resolve(DIST, "meta.json"), JSON.stringify(meta));
 console.log(`  meta.json:      ${fmt(JSON.stringify(meta).length)}`);
 
-// Copy the static frontend.
-copyFileSync(resolve(ROOT, "web/static.html"), resolve(DIST, "index.html"));
+// Copy the static frontend, substituting build-time placeholders into the
+// inline JSON-LD Dataset block (record count, source count, dateModified).
+const buildDate = meta.built_at.slice(0, 10); // YYYY-MM-DD
+const html = readFileSync(resolve(ROOT, "web/static.html"), "utf8")
+  .replaceAll("__JSONLD_N__", String(rows.length))
+  .replaceAll("__JSONLD_S__", String(meta.sources.length))
+  .replaceAll("__JSONLD_DATE__", buildDate);
+writeFileSync(resolve(DIST, "index.html"), html);
+
+// SEO: minimal sitemap + robots. Single URL because the SPA has no per-record
+// pages — everything lives under /. lastmod tracks the build, telling crawlers
+// to re-fetch when the index changes.
+writeFileSync(
+  resolve(DIST, "sitemap.xml"),
+  `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://xjodoin.github.io/theses-quebec/</loc>
+    <lastmod>${buildDate}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
+`,
+);
+writeFileSync(
+  resolve(DIST, "robots.txt"),
+  `User-agent: *
+Allow: /
+
+Sitemap: https://xjodoin.github.io/theses-quebec/sitemap.xml
+`,
+);
 
 // 404 page — sends visitors back to the search index.
 writeFileSync(
