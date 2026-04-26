@@ -102,3 +102,6 @@ jobs:
           assert norm["url"].startswith("https://")
           print("OK")
           PY
+
+      - name: Pytest
+        run: pytest -v tests/
