@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false   # pas besoin de la DB pour les tests d'imports
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate sources.yaml
+        run: |
+          python <<'PY'
+          import yaml
+          srcs = yaml.safe_load(open("harvester/sources.yaml"))
+          assert isinstance(srcs, list) and srcs, "sources.yaml empty or malformed"
+          required = {"id", "name", "short", "platform", "base_url"}
+          for s in srcs:
+              missing = required - set(s)
+              assert not missing, f"{s.get('id')}: missing {missing}"
+              assert s["platform"] in {"eprints", "dspace", "blacklight"}, s
+          print(f"OK · {len(srcs)} sources")
+          PY
+
+      - name: Import smoke test
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, 'harvester')
+          import harvest, normalize, classify, db, mcgill_harvest, llm_classify
+          sys.path.insert(0, 'api')
+          import app
+          print('All modules importable')
+          "
+
+      - name: Classifier sanity check
+        run: |
+          python <<'PY'
+          import sys
+          sys.path.insert(0, "harvester")
+          from classify import classify_discipline
+
+          cases = [
+              ({"title": "Didactique des mathématiques au secondaire",
+                "subjects": "", "abstract": "", "publisher": ""},
+               "Sciences de l'éducation"),
+              ({"title": "Sociologie urbaine de Montréal",
+                "subjects": "", "abstract": "", "publisher": ""},
+               "Sociologie"),
+              ({"title": "Réseaux de neurones convolutifs pour la vision par ordinateur",
+                "subjects": "informatique; intelligence artificielle",
+                "abstract": "", "publisher": ""},
+               "Informatique"),
+          ]
+          for record, expected in cases:
+              got = classify_discipline(record)
+              assert got == expected, f"{record['title']!r} → {got!r} (expected {expected!r})"
+          print(f"OK · {len(cases)} cases")
+          PY
+
+      - name: Normalizer sanity check
+        run: |
+          python <<'PY'
+          import sys
+          sys.path.insert(0, "harvester")
+          from normalize import normalize_record
+
+          payload = {
+              "oai_identifier": "oai:test:1",
+              "datestamp": "2024-01-01",
+              "dc": {
+                  "title": ["Sample thèse de doctorat"],
+                  "creator": ["Lastname, Firstname"],
+                  "type": ["Thesis"],
+                  "date": ["2024-06-15", "2024-09-01"],   # earliest wins
+                  "identifier": ["https://example.ca/handle/1234"],
+              },
+          }
+          source = {"id": "test", "short": "Test"}
+          norm = normalize_record(payload, source)
+          assert norm is not None, "thesis should be kept"
+          assert norm["title"] == "Sample thèse de doctorat"
+          assert norm["year"] == 2024
+          assert norm["url"].startswith("https://")
+          print("OK")
+          PY
