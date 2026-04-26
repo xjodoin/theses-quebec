@@ -107,3 +107,33 @@ def test_english_engineering_mechanical():
 def test_english_clinical_oncology():
     assert classify_discipline(_rec(title="A clinical oncology trial")) \
         == "Médecine"
+
+
+def test_broad_keyword_education_in_abstract_does_not_misclassify():
+    """Real bug from user feedback: an econometrics thesis with 'éducation' as
+    a covariate in its abstract was tagged Sciences de l'éducation."""
+    record = _rec(
+        title="Essays in applied microeconometrics with risk-taking and savings",
+        subjects="Microéconomie; Économétrie; Épargne",
+        abstract=(
+            "Cette thèse présente trois chapitres en microéconométrie. "
+            "Conditionnant sur des variables observables comme l'éducation "
+            "et le genre, suggérant des réseaux liés à la capacité cognitive."
+        ),
+    )
+    assert classify_discipline(record) == "Économie"
+
+
+def test_broad_keyword_education_still_works_in_title():
+    record = _rec(title="L'éducation préscolaire au Québec")
+    assert classify_discipline(record) == "Sciences de l'éducation"
+
+
+def test_broad_keyword_history_in_abstract_does_not_misclassify():
+    record = _rec(
+        title="Modèles bayésiens pour la prédiction génomique",
+        subjects="Statistique bayésienne; Génétique",
+        abstract="We review the history of Bayesian methods in statistics.",
+    )
+    # Subjects has 'genetique', 'statistique' — Mathématiques wins via 'statistique'.
+    assert classify_discipline(record) == "Mathématiques"
