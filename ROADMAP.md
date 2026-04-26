@@ -7,6 +7,12 @@ ajout, ou réagis dans une issue pour discuter d'une priorité.
 plus 2.3 (investigué) et 3.1 (24 tests). Le seul item Sprint 1 restant
 est 1.7 (highlight diacritiques-aware, faible valeur).
 
+**v0.3 livrée le 26 avril 2026** — Cap 500→2 000/source (5 002 → 20 171
+records, ×4), Polytechnique ajoutée, taxonomie 33 → 74 disciplines
+Érudit-aligned, classifieur bilingue, audit a11y FastAPI, SEO
+(sitemap + JSON-LD Dataset). 1,04 % records non classés (vs 28,6 %
+au prototype, 0,02 % avec LLM en v0.2).
+
 **Légende**
 
 - **Effort** : `S` ≤ 4 h · `M` ½–2 jours · `L` une semaine et plus
@@ -37,10 +43,10 @@ est 1.7 (highlight diacritiques-aware, faible valeur).
 
 | # | Amélioration | Effort | Valeur | Statut |
 |---|---|---|---|---|
-| 2.1 | **Lever le cap 500/source** — re-harvester sans `--max-per-source`. Estimation : ~50 000 records, DB ~250 MB. | S | ✶✶✶ | ⏳ |
-| 2.2 | **Migrer vers Pagefind** — à 50k records l'index MiniSearch dépasse 30 MB. Pagefind charge des chunks à la demande, ~100–500 KB par session. | M | ✶✶✶ | dépend de 2.1 |
+| 2.1 | **Lever le cap 500/source** — re-harvester sans `--max-per-source`. Estimation : ~50 000 records, DB ~250 MB. | S | ✶✶✶ | 🟡 v0.3 cap 2 000 (20 k records, 11 MB gz) |
+| 2.2 | **Migrer vers Pagefind** — à 50k records l'index MiniSearch dépasse 30 MB. Pagefind charge des chunks à la demande, ~100–500 KB par session. | M | ✶✶✶ | ⏳ v0.4 si nécessaire |
 | 2.3 | **Ajouter Érudit** — `oai.erudit.org`, couvre revues + thèses. Le déclencheur initial du projet. Investigué : OAI-PMH ne sert que des articles de revues (aucun set thèses, `dc:type=text`); les thèses Érudit sont fédérées depuis Papyrus/Savoirs UdeS/Archipel — déjà moissonnés directement. Voir notes dans `sources.yaml`. | M | ✶✶✶ | ✅ investigué |
-| 2.4 | **Étendre la taxonomie disciplinaire** — passer de 33 à 60+ catégories (sous-disciplines). Re-classifier en batch. | M | ✶✶ | ⏳ |
+| 2.4 | **Étendre la taxonomie disciplinaire** — passer de 33 à 60+ catégories (sous-disciplines). Re-classifier en batch. | M | ✶✶ | ✅ v0.3 (74 disciplines, Érudit-aligned) |
 | 2.5 | **Re-classifier l'historique** quand `classify.py` évolue — bouton CLI `classify-existing`. | S | ✶✶ | ⏳ |
 | 2.6 | **Dépôts canadiens hors Québec** — UofT, UBC, McMaster, Dalhousie. OAI-PMH partout. Renomme en `theses-canada` ? | L | ✶✶ | ⏳ |
 | 2.7 | **Fallback PDF text extraction** — pour les records sans abstract, extraire les 500 premiers mots du PDF (institutions qui le permettent). Améliore la classif LLM. | L | ✶✶ | éthique |
@@ -52,10 +58,10 @@ est 1.7 (highlight diacritiques-aware, faible valeur).
 | # | Amélioration | Effort | Valeur | Statut |
 |---|---|---|---|---|
 | 3.1 | **Tests Python** — `pytest` sur `normalize.py` (extraction année, type), `classify.py` (mots-clés). Ajouter à `ci.yml`. | S | ✶✶ | ✅ `e00c3b3` (24 tests) |
-| 3.2 | **Audit accessibilité** — ARIA labels sur facettes/pagination, traversée clavier des résultats, contraste. Test lighthouse. | M | ✶✶ | ⏳ |
+| 3.2 | **Audit accessibilité** — ARIA labels sur facettes/pagination, traversée clavier des résultats, contraste. Test lighthouse. | M | ✶✶ | 🟡 v0.3 sur web/index.html (FastAPI) ; à backporter sur web/static.html |
 | 3.3 | **i18n EN** — toggle FR/EN dans le header. Interface uniquement, pas de traduction des résumés. | M | ✶ | ⏳ |
 | 3.4 | **OGP / cartes sociales** — `<meta>` pour partages X/Bluesky/LinkedIn. Capture statique du site. | S | ✶ | ⏳ |
-| 3.5 | **Sitemap.xml + JSON-LD `Dataset`** — visibilité Google Scholar / Datasets. | S | ✶✶ | ⏳ |
+| 3.5 | **Sitemap.xml + JSON-LD `Dataset`** — visibilité Google Scholar / Datasets. | S | ✶✶ | ✅ v0.3 |
 | 3.6 | **Documentation interne (`docs/`)** — schéma DB, format JSONL Gemini, règles de classif. | M | ✶ | ⏳ |
 | 3.7 | **CONTRIBUTORS.md auto-généré** — `gh contributor list`. | S | ✶ | ⏳ |
 
