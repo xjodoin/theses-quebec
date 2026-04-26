@@ -6,6 +6,57 @@
 <title>Thèses du Québec — recherche unifiée</title>
 <meta name="description" content="Recherche unifiée des thèses et mémoires des universités québécoises. 5 000+ records · 13 dépôts · recherche locale dans le navigateur.">
 
+<!-- TODO: produce a real og-image.png (1200×630) and drop it in dist/. URL is referenced below. -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Thèses du Québec — recherche unifiée">
+<meta property="og:description" content="Recherche unifiée des thèses et mémoires des universités québécoises. ~5 000 records · 13 dépôts · recherche locale dans le navigateur.">
+<meta property="og:url" content="https://xjodoin.github.io/theses-quebec/">
+<meta property="og:image" content="https://xjodoin.github.io/theses-quebec/og-image.png">
+<meta property="og:locale" content="fr_CA">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Thèses du Québec — recherche unifiée">
+<meta name="twitter:description" content="Recherche unifiée par discipline · ~5 000 records · open data">
+<meta name="twitter:image" content="https://xjodoin.github.io/theses-quebec/og-image.png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Dataset",
+  "name": "Thèses du Québec",
+  "alternateName": "theses-quebec",
+  "description": "Recherche unifiée des thèses et mémoires des universités québécoises. __JSONLD_N__ records moissonnés depuis __JSONLD_S__ dépôts institutionnels via OAI-PMH, classés par discipline avec un classifieur règle-base + Gemini.",
+  "url": "https://xjodoin.github.io/theses-quebec/",
+  "sameAs": "https://github.com/xjodoin/theses-quebec",
+  "inLanguage": ["fr", "en"],
+  "license": "https://opensource.org/licenses/MIT",
+  "creator": {
+    "@type": "Person",
+    "name": "Xavier Jodoin",
+    "url": "https://github.com/xjodoin"
+  },
+  "keywords": ["thèses", "mémoires", "Quebec", "OAI-PMH", "academic search", "open access"],
+  "spatialCoverage": { "@type": "Place", "name": "Québec, Canada" },
+  "distribution": [
+    {
+      "@type": "DataDownload",
+      "encodingFormat": "application/json",
+      "contentUrl": "https://xjodoin.github.io/theses-quebec/search.json",
+      "name": "Search index (MiniSearch JSON, ~3 MB gzipped)"
+    },
+    {
+      "@type": "DataDownload",
+      "encodingFormat": "application/x-sqlite3",
+      "contentUrl": "https://github.com/xjodoin/theses-quebec/raw/main/data/theses.db",
+      "name": "Source SQLite database (Git LFS)"
+    }
+  ],
+  "isAccessibleForFree": true,
+  "datePublished": "2026-04-26",
+  "dateModified": "__JSONLD_DATE__"
+}
+</script>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
