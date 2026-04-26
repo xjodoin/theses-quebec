@@ -98,6 +98,8 @@ tailwind.config = {
 </head>
 <body class="bg-ink-50 dark:bg-ink-900 text-ink-900 dark:text-ink-50 font-sans antialiased min-h-screen">
 
+<a href="#results" class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:px-3 focus:py-2 focus:rounded-md focus:bg-ink-900 focus:text-white dark:focus:bg-ink-50 dark:focus:text-ink-900 focus:shadow-card focus:outline-none focus:ring-2 focus:ring-accent-300">Aller aux résultats</a>
+
 <!-- ============== Header ============== -->
 <header class="sticky top-0 z-30 bg-white/85 dark:bg-ink-900/85 backdrop-blur border-b border-ink-200 dark:border-ink-700">
   <div class="max-w-[1400px] mx-auto px-4 lg:px-8 py-4 flex items-center gap-4">
@@ -126,7 +128,7 @@ tailwind.config = {
         GitHub
       </a>
       <button id="theme-toggle" type="button"
-              class="inline-flex items-center justify-center w-8 h-8 rounded-md text-ink-500 hover:text-ink-900 dark:text-ink-400 dark:hover:text-ink-100 hover:bg-ink-100 dark:hover:bg-ink-700 transition"
+              class="inline-flex items-center justify-center w-8 h-8 rounded-md text-ink-500 hover:text-ink-900 dark:text-ink-400 dark:hover:text-ink-100 hover:bg-ink-100 dark:hover:bg-ink-700 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300"
               aria-label="Basculer le thème sombre" title="Basculer le thème sombre">
         <svg data-theme-icon="sun" viewBox="0 0 24 24" class="w-4 h-4 hidden dark:block" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="4"/>
@@ -136,8 +138,9 @@ tailwind.config = {
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
         </svg>
       </button>
-      <button id="open-filters-mobile"
-              class="md:hidden inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium border border-ink-200 dark:border-ink-700 rounded-md hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200">
+      <button id="open-filters-mobile" type="button"
+              aria-expanded="false" aria-controls="sidebar"
+              class="md:hidden inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium border border-ink-200 dark:border-ink-700 rounded-md hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300">
         <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M3 6h18M6 12h12M10 18h4"/>
         </svg>
@@ -154,6 +157,7 @@ tailwind.config = {
           <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/>
         </svg>
         <input id="q" type="search" autocomplete="off"
+               aria-label="Rechercher (mots-clés, titre, auteur, sujet)"
                placeholder="mots-clés, titre, auteur, sujet…  (raccourci : /)"
                class="w-full pl-9 pr-9 py-2.5 bg-white dark:bg-ink-800 text-ink-900 dark:text-ink-50 border border-ink-200 dark:border-ink-700 rounded-md text-sm
                       focus:outline-none focus:ring-2 focus:ring-accent-300 focus:border-accent-400
@@ -164,13 +168,13 @@ tailwind.config = {
         </kbd>
       </label>
 
-      <div class="inline-flex rounded-md border border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-800 text-sm overflow-hidden">
-        <button data-type="" class="type-btn px-3 py-2 hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200 font-medium">Tous</button>
-        <button data-type="thesis" class="type-btn px-3 py-2 hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200 border-l border-ink-200 dark:border-ink-700">Thèses</button>
-        <button data-type="memoire" class="type-btn px-3 py-2 hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200 border-l border-ink-200 dark:border-ink-700">Mémoires</button>
+      <div role="tablist" aria-label="Type de document" class="inline-flex rounded-md border border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-800 text-sm overflow-hidden">
+        <button type="button" role="tab" aria-selected="true" data-type="" class="type-btn px-3 py-2 hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300 focus-visible:ring-inset">Tous</button>
+        <button type="button" role="tab" aria-selected="false" data-type="thesis" class="type-btn px-3 py-2 hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200 border-l border-ink-200 dark:border-ink-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300 focus-visible:ring-inset">Thèses</button>
+        <button type="button" role="tab" aria-selected="false" data-type="memoire" class="type-btn px-3 py-2 hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200 border-l border-ink-200 dark:border-ink-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300 focus-visible:ring-inset">Mémoires</button>
       </div>
 
-      <select id="sort" class="bg-white dark:bg-ink-800 text-ink-900 dark:text-ink-50 border border-ink-200 dark:border-ink-700 rounded-md px-3 py-2 text-sm
+      <select id="sort" aria-label="Trier les résultats" class="bg-white dark:bg-ink-800 text-ink-900 dark:text-ink-50 border border-ink-200 dark:border-ink-700 rounded-md px-3 py-2 text-sm
                                 focus:outline-none focus:ring-2 focus:ring-accent-300">
         <option value="relevance">Pertinence</option>
         <option value="year_desc">Année (récent → ancien)</option>
@@ -180,9 +184,11 @@ tailwind.config = {
 
       <div class="hidden lg:flex items-center gap-1 text-sm">
         <input id="year_min" type="number" min="1900" max="2100" placeholder="depuis"
+               aria-label="Année minimale"
                class="bg-white dark:bg-ink-800 text-ink-900 dark:text-ink-50 placeholder:text-ink-400 dark:placeholder:text-ink-500 border border-ink-200 dark:border-ink-700 rounded-md px-2 py-2 w-20 focus:outline-none focus:ring-2 focus:ring-accent-300">
-        <span class="text-ink-400 dark:text-ink-500">→</span>
+        <span aria-hidden="true" class="text-ink-400 dark:text-ink-500">→</span>
         <input id="year_max" type="number" min="1900" max="2100" placeholder="jusqu'à"
+               aria-label="Année maximale"
                class="bg-white dark:bg-ink-800 text-ink-900 dark:text-ink-50 placeholder:text-ink-400 dark:placeholder:text-ink-500 border border-ink-200 dark:border-ink-700 rounded-md px-2 py-2 w-20 focus:outline-none focus:ring-2 focus:ring-accent-300">
       </div>
     </div>
@@ -194,14 +200,14 @@ tailwind.config = {
       <span class="text-ink-500 dark:text-ink-400 font-medium uppercase tracking-wide">Filtres actifs :</span>
       <div id="active-chips" class="flex flex-wrap gap-1.5"></div>
       <button id="copy-link" type="button"
-              class="ml-auto inline-flex items-center gap-1 text-ink-500 dark:text-ink-400 hover:text-ink-900 dark:hover:text-ink-100 hover:underline">
+              class="ml-auto inline-flex items-center gap-1 text-ink-500 dark:text-ink-400 hover:text-ink-900 dark:hover:text-ink-100 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300 rounded">
         <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1 1"/>
           <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1-1"/>
         </svg>
         <span data-copy-label>Copier le lien</span>
       </button>
-      <button id="reset" class="text-ink-500 dark:text-ink-400 hover:text-ink-900 dark:hover:text-ink-100 hover:underline">tout effacer</button>
+      <button id="reset" type="button" class="text-ink-500 dark:text-ink-400 hover:text-ink-900 dark:hover:text-ink-100 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300 rounded">tout effacer</button>
     </div>
   </div>
 </header>
@@ -210,7 +216,7 @@ tailwind.config = {
 <main class="max-w-[1400px] mx-auto px-4 lg:px-8 py-6 grid grid-cols-12 gap-6 lg:gap-8">
 
   <!-- Sidebar (desktop) / Drawer (mobile) -->
-  <aside id="sidebar"
+  <aside id="sidebar" aria-label="Filtres de recherche"
          class="col-span-12 md:col-span-4 lg:col-span-3
                 fixed md:sticky md:top-[7.25rem] inset-0 md:inset-auto z-40 md:z-auto
                 bg-white dark:bg-ink-900 md:bg-transparent md:dark:bg-transparent border-r md:border-0 border-ink-200 dark:border-ink-700
@@ -218,7 +224,7 @@ tailwind.config = {
                 md:max-h-[calc(100vh-8rem)] overflow-y-auto scrollbar-thin">
     <div class="md:hidden flex items-center justify-between p-4 border-b border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-900 sticky top-0">
       <h2 class="font-serif font-semibold text-ink-900 dark:text-ink-50">Filtres</h2>
-      <button id="close-filters-mobile" class="text-ink-500 dark:text-ink-400 hover:text-ink-900 dark:hover:text-ink-100 p-1">
+      <button id="close-filters-mobile" type="button" aria-label="Fermer les filtres" class="text-ink-500 dark:text-ink-400 hover:text-ink-900 dark:hover:text-ink-100 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300 rounded">
         <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6l-12 12" stroke-linecap="round"/></svg>
       </button>
     </div>
@@ -267,17 +273,17 @@ tailwind.config = {
        class="fixed inset-0 bg-ink-900/40 dark:bg-black/60 z-30 hidden md:hidden"></div>
 
   <!-- ============== Results ============== -->
-  <section class="col-span-12 md:col-span-8 lg:col-span-9 min-w-0">
+  <section id="results-section" aria-label="Résultats de recherche" aria-live="polite" class="col-span-12 md:col-span-8 lg:col-span-9 min-w-0">
     <div class="flex items-baseline justify-between gap-4 mb-4">
-      <p id="status" class="text-sm text-ink-600 dark:text-ink-300">
+      <p id="status" aria-live="polite" aria-atomic="true" class="text-sm text-ink-600 dark:text-ink-300">
         <span class="skeleton inline-block w-32 h-4 rounded align-middle"></span>
       </p>
-      <p class="hidden sm:block text-xs text-ink-400 dark:text-ink-500" id="page-info"></p>
+      <p class="hidden sm:block text-xs text-ink-500 dark:text-ink-400" id="page-info"></p>
     </div>
 
     <ul id="results" class="space-y-3"></ul>
 
-    <nav id="pager" class="flex items-center justify-center gap-2 pt-8 text-sm"></nav>
+    <nav id="pager" aria-label="Pagination" class="flex items-center justify-center gap-2 pt-8 text-sm"></nav>
   </section>
 </main>
 
@@ -299,7 +305,7 @@ tailwind.config = {
           Dépôts moissonnés
         </h3>
         <p id="footer-sources" class="text-ink-600 dark:text-ink-300 leading-relaxed text-xs">…</p>
-        <p class="mt-3 text-xs text-ink-400 dark:text-ink-500">
+        <p class="mt-3 text-xs text-ink-500 dark:text-ink-400">
           Métadonnées : © universités respectives. Voir
           <a class="hover:text-ink-700 dark:hover:text-ink-200 underline"
              href="https://github.com/xjodoin/theses-quebec/blob/main/NOTICE"
@@ -367,7 +373,7 @@ tailwind.config = {
       </div>
     </div>
 
-    <div class="mt-8 pt-6 border-t border-ink-100 dark:border-ink-700 flex flex-wrap items-center justify-between gap-4 text-xs text-ink-400 dark:text-ink-500">
+    <div class="mt-8 pt-6 border-t border-ink-100 dark:border-ink-700 flex flex-wrap items-center justify-between gap-4 text-xs text-ink-500 dark:text-ink-400">
       <p>
         Construit avec
         <a class="hover:text-ink-700 dark:hover:text-ink-200 underline"
@@ -393,7 +399,7 @@ tailwind.config = {
   <div class="relative h-full w-full overflow-y-auto flex items-start justify-center">
     <div data-card class="relative bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 rounded-xl shadow-card-hover max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
       <button data-close type="button" aria-label="Fermer"
-              class="absolute top-3 right-3 z-10 inline-flex items-center justify-center w-8 h-8 rounded-md text-ink-500 hover:text-ink-900 dark:text-ink-400 dark:hover:text-ink-100 hover:bg-ink-100 dark:hover:bg-ink-700 transition">
+              class="absolute top-3 right-3 z-10 inline-flex items-center justify-center w-8 h-8 rounded-md text-ink-500 hover:text-ink-900 dark:text-ink-400 dark:hover:text-ink-100 hover:bg-ink-100 dark:hover:bg-ink-700 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300">
         <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6l-12 12" stroke-linecap="round"/></svg>
       </button>
       <div class="p-6 sm:p-8 space-y-5">
@@ -407,7 +413,7 @@ tailwind.config = {
         <p data-abstract class="text-sm text-ink-700 dark:text-ink-200 leading-relaxed whitespace-pre-line"></p>
         <div>
           <a data-source-url target="_blank" rel="noopener"
-             class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium transition">
+             class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-ink-800">
             Ouvrir la source
             <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17l10-10M9 7h8v8" stroke-linecap="round"/></svg>
           </a>
@@ -415,14 +421,14 @@ tailwind.config = {
         <section class="border-t border-ink-100 dark:border-ink-700 pt-5">
           <h3 class="font-serif text-lg font-semibold text-ink-900 dark:text-ink-50 mb-3">Citer cette thèse</h3>
           <div data-cite-tabs class="inline-flex rounded-md border border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-800 text-sm overflow-hidden mb-3">
-            <button type="button" data-cite-fmt="bibtex" class="cite-tab px-3 py-1.5 text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700">BibTeX</button>
-            <button type="button" data-cite-fmt="apa" class="cite-tab px-3 py-1.5 text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700 border-l border-ink-200 dark:border-ink-700">APA</button>
-            <button type="button" data-cite-fmt="ris" class="cite-tab px-3 py-1.5 text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700 border-l border-ink-200 dark:border-ink-700">RIS</button>
+            <button type="button" data-cite-fmt="bibtex" class="cite-tab px-3 py-1.5 text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300 focus-visible:ring-inset">BibTeX</button>
+            <button type="button" data-cite-fmt="apa" class="cite-tab px-3 py-1.5 text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300 focus-visible:ring-inset border-l border-ink-200 dark:border-ink-700">APA</button>
+            <button type="button" data-cite-fmt="ris" class="cite-tab px-3 py-1.5 text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300 focus-visible:ring-inset border-l border-ink-200 dark:border-ink-700">RIS</button>
           </div>
           <div class="flex items-start gap-2">
             <pre data-cite-output class="flex-1 font-mono text-xs whitespace-pre-wrap bg-ink-50 dark:bg-ink-900 border border-ink-200 dark:border-ink-700 rounded p-3 text-ink-800 dark:text-ink-100"></pre>
             <button type="button" data-cite-copy
-                    class="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium border border-ink-200 dark:border-ink-700 text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700 transition">
+                    class="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium border border-ink-200 dark:border-ink-700 text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300">
               <span data-cite-copy-label>Copier</span>
             </button>
           </div>
@@ -434,8 +440,9 @@ tailwind.config = {
 
 <!-- ============== Templates ============== -->
 <template id="tmpl-result">
-  <li class="group bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 rounded-lg p-4 sm:p-5
-             hover:border-ink-300 dark:hover:border-ink-600 hover:shadow-card-hover shadow-card transition-all cursor-pointer">
+  <li tabindex="0" role="article" class="group bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 rounded-lg p-4 sm:p-5
+             hover:border-ink-300 dark:hover:border-ink-600 hover:shadow-card-hover shadow-card transition-all cursor-pointer
+             focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300 focus-visible:border-accent-400">
     <div class="flex items-start gap-4">
       <div class="flex-1 min-w-0">
         <div class="flex flex-wrap items-center gap-2 mb-1.5">
@@ -562,7 +569,7 @@ function renderAuthorChips(el, authorsStr) {
   el.innerHTML = "";
   if (!authorsStr) {
     const span = document.createElement("span");
-    span.className = "text-ink-400 dark:text-ink-500 italic";
+    span.className = "text-ink-500 dark:text-ink-400 italic";
     span.textContent = "auteur·rice non renseigné";
     el.appendChild(span);
     return;
@@ -595,7 +602,7 @@ function renderAuthorChips(el, authorsStr) {
   });
   if (list.length > shown.length) {
     const more = document.createElement("span");
-    more.className = "text-xs text-ink-400 dark:text-ink-500";
+    more.className = "text-xs text-ink-500 dark:text-ink-400";
     more.textContent = `+${list.length - shown.length} autres`;
     el.appendChild(more);
   }
@@ -681,6 +688,7 @@ function renderResults(data, opts = {}) {
     li.querySelector("[data-open]").href = r.url || "#";
     li._record = r;
     li.addEventListener("click", onResultCardClick);
+    li.addEventListener("keydown", onResultCardKeydown);
 
     ul.appendChild(node);
   }
@@ -689,6 +697,15 @@ function renderResults(data, opts = {}) {
 function onResultCardClick(ev) {
   if (ev.target.closest("a, button")) return;
   if (window.getSelection && window.getSelection().toString().length > 0) return;
+  const li = ev.currentTarget;
+  if (li && li._record) openDetail(li._record);
+}
+
+function onResultCardKeydown(ev) {
+  if (ev.key !== "Enter" && ev.key !== " ") return;
+  // Don't hijack Enter/Space when focus is inside an interactive child (link/button/input).
+  if (ev.target !== ev.currentTarget && ev.target.closest("a, button, input, select, textarea")) return;
+  ev.preventDefault();
   const li = ev.currentTarget;
   if (li && li._record) openDetail(li._record);
 }
@@ -708,7 +725,7 @@ function renderPager(data) {
     b.innerHTML = label;
     b.disabled = disabled;
     if (ariaLabel) b.setAttribute("aria-label", ariaLabel);
-    b.className = "min-w-[2.25rem] h-9 px-3 rounded-md text-sm font-medium transition " +
+    b.className = "min-w-[2.25rem] h-9 px-3 rounded-md text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300 " +
       (active ? "bg-ink-900 dark:bg-ink-50 text-white dark:text-ink-900 shadow-card"
               : disabled ? "text-ink-300 dark:text-ink-600 cursor-not-allowed"
                          : "text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700");
@@ -764,7 +781,7 @@ function renderFacets(facets) {
     el.appendChild(btn);
   }
   if (!all.length) {
-    el.innerHTML = `<p class="text-xs text-ink-400 dark:text-ink-500 italic px-2">Aucune discipline correspondant à "${escapeHTML(facetState.discFilter)}"</p>`;
+    el.innerHTML = `<p class="text-xs text-ink-500 dark:text-ink-400 italic px-2">Aucune discipline correspondant à "${escapeHTML(facetState.discFilter)}"</p>`;
   }
   updateFacetBadge("#disc-active", state.discipline.size);
 
@@ -859,8 +876,10 @@ function renderActiveChips() {
 
   for (const c of chips) {
     const b = document.createElement("button");
-    b.className = "inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 hover:border-ink-300 dark:hover:border-ink-600 text-ink-700 dark:text-ink-200 text-xs";
-    b.innerHTML = `${escapeHTML(c.label)}<span class="text-ink-400 dark:text-ink-500">×</span>`;
+    b.type = "button";
+    b.setAttribute("aria-label", `Retirer le filtre : ${c.label}`);
+    b.className = "inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 hover:border-ink-300 dark:hover:border-ink-600 text-ink-700 dark:text-ink-200 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300";
+    b.innerHTML = `${escapeHTML(c.label)}<span aria-hidden="true" class="text-ink-500 dark:text-ink-400">×</span>`;
     b.onclick = () => { c.on(); state.page = 1; runSearch(); };
     container.appendChild(b);
   }
@@ -871,6 +890,7 @@ function renderActiveChips() {
 function updateTypeButtons() {
   $$(".type-btn").forEach(b => {
     const active = (b.dataset.type === state.type);
+    b.setAttribute("aria-selected", active ? "true" : "false");
     b.classList.toggle("bg-ink-800", active);
     b.classList.toggle("dark:bg-ink-600", active);
     b.classList.toggle("text-white", active);
@@ -885,6 +905,24 @@ let modalLastFocus = null;
 let modalRecord = null;
 let modalCiteFormat = localStorage.getItem("tq:cite-format") || "bibtex";
 let citeCopyTimer = null;
+
+// Focus-trap helper — collects tabbable elements within a container.
+const FOCUSABLE_SEL = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+function focusableIn(root) {
+  return [...root.querySelectorAll(FOCUSABLE_SEL)].filter(el => !el.hasAttribute("disabled") && el.offsetParent !== null);
+}
+function trapTab(ev, root) {
+  if (ev.key !== "Tab") return;
+  const items = focusableIn(root);
+  if (!items.length) { ev.preventDefault(); return; }
+  const first = items[0], last = items[items.length - 1];
+  const active = document.activeElement;
+  if (ev.shiftKey && (active === first || !root.contains(active))) {
+    ev.preventDefault(); last.focus();
+  } else if (!ev.shiftKey && active === last) {
+    ev.preventDefault(); first.focus();
+  }
+}
 
 function asciiSlug(s) {
   return String(s || "")
@@ -1048,6 +1086,7 @@ function openDetail(r) {
 }
 
 function closeDetail() {
+  if (modal.classList.contains("hidden")) return;
   modal.classList.add("hidden");
   document.body.classList.remove("overflow-hidden");
   modalRecord = null;
@@ -1056,6 +1095,11 @@ function closeDetail() {
   }
   modalLastFocus = null;
 }
+
+modal.addEventListener("keydown", (ev) => {
+  if (modal.classList.contains("hidden")) return;
+  trapTab(ev, modal);
+});
 
 modal.querySelector("[data-close]").addEventListener("click", closeDetail);
 modal.querySelector("[data-overlay]").addEventListener("click", closeDetail);
@@ -1153,16 +1197,44 @@ $("#reset").addEventListener("click", () => {
 });
 
 // Mobile drawer
-$("#open-filters-mobile").addEventListener("click", () => {
-  $("#sidebar").classList.remove("-translate-x-full");
-  $("#sidebar-backdrop").classList.remove("hidden");
-});
-function closeDrawer() {
-  $("#sidebar").classList.add("-translate-x-full");
-  $("#sidebar-backdrop").classList.add("hidden");
+const sidebarEl = $("#sidebar");
+const openFiltersBtn = $("#open-filters-mobile");
+let drawerLastFocus = null;
+function isDrawerOpen() {
+  // Drawer is "open" only when the off-canvas transform has been removed; on
+  // desktop md+, it's permanently visible, so we gate on the trigger button.
+  return openFiltersBtn.offsetParent !== null && !sidebarEl.classList.contains("-translate-x-full");
 }
+function openDrawer() {
+  drawerLastFocus = document.activeElement;
+  sidebarEl.classList.remove("-translate-x-full");
+  $("#sidebar-backdrop").classList.remove("hidden");
+  openFiltersBtn.setAttribute("aria-expanded", "true");
+  sidebarEl.setAttribute("role", "dialog");
+  sidebarEl.setAttribute("aria-modal", "true");
+  document.body.classList.add("overflow-hidden");
+  setTimeout(() => $("#close-filters-mobile").focus(), 0);
+}
+function closeDrawer() {
+  sidebarEl.classList.add("-translate-x-full");
+  $("#sidebar-backdrop").classList.add("hidden");
+  openFiltersBtn.setAttribute("aria-expanded", "false");
+  sidebarEl.removeAttribute("role");
+  sidebarEl.removeAttribute("aria-modal");
+  document.body.classList.remove("overflow-hidden");
+  if (drawerLastFocus && typeof drawerLastFocus.focus === "function") {
+    try { drawerLastFocus.focus(); } catch (_) {}
+  }
+  drawerLastFocus = null;
+}
+openFiltersBtn.addEventListener("click", openDrawer);
 $("#close-filters-mobile").addEventListener("click", closeDrawer);
 $("#sidebar-backdrop").addEventListener("click", closeDrawer);
+sidebarEl.addEventListener("keydown", (ev) => {
+  if (!isDrawerOpen()) return;
+  if (ev.key === "Escape") { ev.preventDefault(); closeDrawer(); return; }
+  trapTab(ev, sidebarEl);
+});
 
 // Keyboard shortcuts
 window.addEventListener("keydown", (e) => {
