@@ -1,0 +1,8 @@
+requests>=2.31
+PyYAML>=6.0
+fastapi>=0.110
+uvicorn[standard]>=0.27
+eval_type_backport>=0.2  # lets FastAPI parse PEP 604 unions on Python 3.9
+playwright>=1.42  # for McGill harvester (Azure WAF bypass)
+google-genai>=1.73  # for Gemini batch API (LLM discipline classifier)
+python-dotenv>=1.0  # auto-load .env at script startup
