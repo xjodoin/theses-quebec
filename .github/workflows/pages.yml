@@ -1,0 +1,69 @@
+name: Deploy to GitHub Pages
+
+# Construit le site statique (SQLite → MiniSearch index pré-compilé →
+# dist/) et le déploie sur GitHub Pages. Se déclenche :
+#   - à chaque push sur main qui touche au code source ou à la DB
+#     (le harvest hebdomadaire commit la DB rafraîchie → redéploie)
+#   - manuellement via l'onglet Actions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/theses.db"
+      - "scripts/build.mjs"
+      - "web/static.html"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (avec LFS pour récupérer la DB)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build static site
+        run: npm run build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

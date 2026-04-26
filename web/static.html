@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thèses du Québec — recherche unifiée</title>
+<meta name="description" content="Recherche unifiée des thèses et mémoires des universités québécoises. 5 000+ records · 13 dépôts · recherche locale dans le navigateur.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        serif: ['"Source Serif 4"', 'Georgia', 'serif'],
+      },
+      colors: {
+        ink: {
+          50: '#f7f8fa', 100: '#eef0f4', 200: '#dadfe8', 300: '#b8c0d0',
+          400: '#8a93a7', 500: '#5d6680', 600: '#404a64', 700: '#2a334a',
+          800: '#1a2238', 900: '#0f1426',
+        },
+        accent: {
+          50: '#fff8eb', 100: '#ffeac8', 200: '#ffd28a', 300: '#ffb74d',
+          400: '#f59e0b', 500: '#d97706', 600: '#a55b04',
+        },
+      },
+      boxShadow: {
+        card: '0 1px 2px 0 rgb(15 20 38 / 0.04), 0 1px 3px 0 rgb(15 20 38 / 0.06)',
+        'card-hover': '0 4px 12px -2px rgb(15 20 38 / 0.08), 0 2px 4px -2px rgb(15 20 38 / 0.06)',
+      },
+    },
+  },
+};
+</script>
+<style>
+  body { font-feature-settings: "ss01", "cv11"; }
+  mark { background: #fff1c4; color: inherit; padding: 0 1px; border-radius: 2px; font-weight: 500; }
+  .clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .scrollbar-thin::-webkit-scrollbar { width: 8px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #dadfe8; border-radius: 4px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #b8c0d0; }
+  details > summary { list-style: none; cursor: pointer; }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] > summary .chevron { transform: rotate(90deg); }
+  .chevron { transition: transform 150ms ease; }
+  @keyframes shimmer {
+    0% { background-position: -1000px 0; } 100% { background-position: 1000px 0; }
+  }
+  .skeleton {
+    background: linear-gradient(90deg, #eef0f4 0%, #f7f8fa 50%, #eef0f4 100%);
+    background-size: 1000px 100%;
+    animation: shimmer 1.6s infinite linear;
+  }
+  /* progress bar for initial load */
+  .progress { width: 100%; height: 3px; background: #eef0f4; overflow: hidden; }
+  .progress > div {
+    height: 100%; width: 30%;
+    background: linear-gradient(90deg, transparent, #f59e0b, transparent);
+    animation: slide 1.2s infinite linear;
+  }
+  @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
+</style>
+</head>
+<body class="bg-ink-50 text-ink-900 font-sans antialiased min-h-screen">
+
+<!-- ============== Initial loading splash ============== -->
+<div id="splash" class="fixed inset-0 grid place-items-center bg-ink-50 z-50">
+  <div class="text-center max-w-sm px-8">
+    <div class="w-12 h-12 mx-auto rounded-lg bg-ink-800 grid place-items-center text-white shadow-card mb-4">
+      <svg viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
+        <path d="M8 7h8M8 11h8" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <h1 class="font-serif text-xl font-semibold mb-1">Thèses du Québec</h1>
+    <p id="splash-status" class="text-sm text-ink-500 mb-3">Téléchargement de l'index…</p>
+    <div class="progress rounded-full"><div></div></div>
+    <p class="mt-4 text-xs text-ink-400">Recherche 100 % locale dans ton navigateur — zéro requête serveur après ce chargement.</p>
+  </div>
+</div>
+
+<!-- ============== Header ============== -->
+<header class="sticky top-0 z-30 bg-white/85 backdrop-blur border-b border-ink-200">
+  <div class="max-w-[1400px] mx-auto px-4 lg:px-8 py-4 flex items-center gap-4">
+    <a href="/" class="flex items-center gap-3 group">
+      <div class="w-9 h-9 rounded-lg bg-ink-800 grid place-items-center text-white shadow-sm">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
+          <path d="M8 7h8M8 11h8" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="leading-tight">
+        <h1 class="font-serif text-xl font-semibold text-ink-900 group-hover:text-ink-700 transition">Thèses du Québec</h1>
+        <p class="text-xs text-ink-500">Recherche unifiée par discipline</p>
+      </div>
+    </a>
+    <div class="ml-auto flex items-center gap-4">
+      <div class="hidden md:flex items-center gap-2 text-xs text-ink-500" id="totals">…</div>
+      <button id="open-filters-mobile"
+              class="md:hidden inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium border border-ink-200 rounded-md hover:bg-ink-100">
+        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 6h18M6 12h12M10 18h4"/>
+        </svg>
+        Filtres
+      </button>
+    </div>
+  </div>
+
+  <div class="border-t border-ink-100">
+    <div class="max-w-[1400px] mx-auto px-4 lg:px-8 py-3 flex flex-wrap items-center gap-2">
+      <label class="relative flex-1 min-w-[16rem]">
+        <svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/>
+        </svg>
+        <input id="q" type="search" autocomplete="off" disabled
+               placeholder="mots-clés, titre, auteur, sujet…  (raccourci : /)"
+               class="w-full pl-9 pr-9 py-2.5 bg-white border border-ink-200 rounded-md text-sm
+                      focus:outline-none focus:ring-2 focus:ring-accent-300 focus:border-accent-400
+                      placeholder:text-ink-400 disabled:opacity-50">
+        <kbd id="q-clear"
+             class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-xs text-ink-400 hover:text-ink-700 cursor-pointer px-1.5 py-0.5 border border-ink-200 rounded">esc</kbd>
+      </label>
+
+      <div class="inline-flex rounded-md border border-ink-200 bg-white text-sm overflow-hidden">
+        <button data-type="" class="type-btn px-3 py-2 hover:bg-ink-100 font-medium">Tous</button>
+        <button data-type="thesis" class="type-btn px-3 py-2 hover:bg-ink-100 border-l border-ink-200">Thèses</button>
+        <button data-type="memoire" class="type-btn px-3 py-2 hover:bg-ink-100 border-l border-ink-200">Mémoires</button>
+      </div>
+
+      <select id="sort" class="bg-white border border-ink-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-300">
+        <option value="relevance">Pertinence</option>
+        <option value="year_desc">Année (récent → ancien)</option>
+        <option value="year_asc">Année (ancien → récent)</option>
+        <option value="title_asc">Titre (A → Z)</option>
+      </select>
+
+      <div class="hidden lg:flex items-center gap-1 text-sm">
+        <input id="year_min" type="number" min="1900" max="2100" placeholder="depuis"
+               class="bg-white border border-ink-200 rounded-md px-2 py-2 w-20 focus:outline-none focus:ring-2 focus:ring-accent-300">
+        <span class="text-ink-400">→</span>
+        <input id="year_max" type="number" min="1900" max="2100" placeholder="jusqu'à"
+               class="bg-white border border-ink-200 rounded-md px-2 py-2 w-20 focus:outline-none focus:ring-2 focus:ring-accent-300">
+      </div>
+    </div>
+  </div>
+
+  <div id="active-filters" class="hidden border-t border-ink-100 bg-ink-50/60">
+    <div class="max-w-[1400px] mx-auto px-4 lg:px-8 py-2 flex flex-wrap items-center gap-2 text-xs">
+      <span class="text-ink-500 font-medium uppercase tracking-wide">Filtres actifs :</span>
+      <div id="active-chips" class="flex flex-wrap gap-1.5"></div>
+      <button id="reset" class="ml-auto text-ink-500 hover:text-ink-900 hover:underline">tout effacer</button>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-[1400px] mx-auto px-4 lg:px-8 py-6 grid grid-cols-12 gap-6 lg:gap-8">
+  <aside id="sidebar"
+         class="col-span-12 md:col-span-4 lg:col-span-3
+                fixed md:sticky md:top-[7.25rem] inset-0 md:inset-auto z-40 md:z-auto
+                bg-white md:bg-transparent border-r md:border-0 border-ink-200
+                transform -translate-x-full md:translate-x-0 transition-transform duration-200
+                md:max-h-[calc(100vh-8rem)] overflow-y-auto scrollbar-thin">
+    <div class="md:hidden flex items-center justify-between p-4 border-b border-ink-200 bg-white sticky top-0">
+      <h2 class="font-serif font-semibold">Filtres</h2>
+      <button id="close-filters-mobile" class="text-ink-500 hover:text-ink-900 p-1">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6l-12 12" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="p-4 md:p-0 space-y-1">
+      <details open class="group bg-white md:bg-transparent rounded-md md:rounded-none border md:border-0 border-ink-200 md:border-b md:border-b-ink-100 md:pb-3">
+        <summary class="flex items-center px-3 md:px-1 py-2 select-none">
+          <svg class="chevron w-4 h-4 mr-1.5 text-ink-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6" stroke-linecap="round"/></svg>
+          <span class="text-xs font-semibold uppercase tracking-wider text-ink-700">Discipline</span>
+          <span id="disc-active" class="ml-auto hidden text-xs px-1.5 rounded-full bg-accent-100 text-accent-600 font-medium"></span>
+        </summary>
+        <div class="px-3 md:px-1 pb-3 space-y-2">
+          <div class="relative">
+            <svg viewBox="0 0 24 24" class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-400" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/>
+            </svg>
+            <input id="disc-search" type="search" placeholder="filtrer les disciplines"
+                   class="w-full pl-7 pr-2 py-1.5 text-xs bg-ink-50 border border-ink-200 rounded focus:outline-none focus:bg-white focus:border-accent-400">
+          </div>
+          <div id="facet-disciplines" class="space-y-px text-sm"></div>
+        </div>
+      </details>
+
+      <details open class="group bg-white md:bg-transparent rounded-md md:rounded-none border md:border-0 border-ink-200 md:border-b md:border-b-ink-100 md:pb-3">
+        <summary class="flex items-center px-3 md:px-1 py-2 select-none">
+          <svg class="chevron w-4 h-4 mr-1.5 text-ink-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6" stroke-linecap="round"/></svg>
+          <span class="text-xs font-semibold uppercase tracking-wider text-ink-700">Université</span>
+          <span id="src-active" class="ml-auto hidden text-xs px-1.5 rounded-full bg-accent-100 text-accent-600 font-medium"></span>
+        </summary>
+        <div id="facet-sources" class="px-3 md:px-1 pb-3 space-y-px text-sm"></div>
+      </details>
+
+      <details open class="group bg-white md:bg-transparent rounded-md md:rounded-none border md:border-0 border-ink-200 md:border-b md:border-b-ink-100 md:pb-3">
+        <summary class="flex items-center px-3 md:px-1 py-2 select-none">
+          <svg class="chevron w-4 h-4 mr-1.5 text-ink-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6" stroke-linecap="round"/></svg>
+          <span class="text-xs font-semibold uppercase tracking-wider text-ink-700">Décennie</span>
+        </summary>
+        <div id="facet-decades" class="px-3 md:px-1 pb-3 space-y-px text-sm"></div>
+      </details>
+    </div>
+  </aside>
+
+  <div id="sidebar-backdrop" class="fixed inset-0 bg-ink-900/40 z-30 hidden md:hidden"></div>
+
+  <section class="col-span-12 md:col-span-8 lg:col-span-9 min-w-0">
+    <div class="flex items-baseline justify-between gap-4 mb-4">
+      <p id="status" class="text-sm text-ink-600">…</p>
+      <p class="hidden sm:block text-xs text-ink-400" id="page-info"></p>
+    </div>
+    <ul id="results" class="space-y-3"></ul>
+    <nav id="pager" class="flex items-center justify-center gap-2 pt-8 text-sm"></nav>
+  </section>
+</main>
+
+<footer class="border-t border-ink-200 mt-12">
+  <div class="max-w-[1400px] mx-auto px-4 lg:px-8 py-8 text-xs text-ink-500 grid sm:grid-cols-2 gap-4">
+    <div>
+      <p class="font-medium text-ink-700 mb-1">À propos</p>
+      <p>Métadonnées moissonnées via OAI-PMH depuis chaque dépôt institutionnel. Recherche locale dans ton navigateur — aucune requête serveur après le chargement initial. <a class="underline hover:text-ink-900" href="https://github.com/xjodoin/theses-quebec">Code source MIT</a>.</p>
+    </div>
+    <div class="sm:text-right">
+      <p class="font-medium text-ink-700 mb-1">Sources</p>
+      <p id="footer-sources">…</p>
+      <p id="footer-built" class="mt-1 text-ink-400"></p>
+    </div>
+  </div>
+</footer>
+
+<template id="tmpl-result">
+  <li class="group bg-white border border-ink-200 rounded-lg p-4 sm:p-5 hover:border-ink-300 hover:shadow-card-hover shadow-card transition-all">
+    <div class="flex items-start gap-4">
+      <div class="flex-1 min-w-0">
+        <div class="flex flex-wrap items-center gap-2 mb-1.5">
+          <span data-type-badge class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide"></span>
+          <span data-discipline class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-ink-100 text-ink-700"></span>
+        </div>
+        <h3>
+          <a data-link target="_blank" rel="noopener"
+             class="font-serif text-[1.0625rem] sm:text-lg font-semibold text-ink-900 hover:text-accent-500 transition leading-snug block"></a>
+        </h3>
+        <p data-authors class="text-sm text-ink-600 mt-1"></p>
+        <p data-abstract class="text-sm text-ink-700 mt-2 clamp-3"></p>
+      </div>
+      <div class="hidden sm:flex flex-col items-end shrink-0 text-right text-xs">
+        <span data-source class="font-semibold text-ink-700"></span>
+        <span data-year class="text-ink-500 mt-0.5"></span>
+        <a data-open target="_blank" rel="noopener"
+           class="mt-3 inline-flex items-center gap-1 text-accent-500 hover:text-accent-600 font-medium opacity-0 group-hover:opacity-100 transition">
+          ouvrir
+          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17l10-10M9 7h8v8" stroke-linecap="round"/></svg>
+        </a>
+      </div>
+    </div>
+  </li>
+</template>
+
+<!-- MiniSearch is loaded as ESM from a CDN. We pin the version that build.mjs
+     also depends on to avoid serialized-format drift. -->
+<script type="module">
+import MiniSearch from "https://cdn.jsdelivr.net/npm/minisearch@7.2.0/+esm";
+
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+const fmt = (n) => n.toLocaleString("fr-CA");
+const escapeHTML = (s="") => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+// ----------------------------------------------------------- search options --
+// MUST mirror scripts/build.mjs MINISEARCH_OPTIONS exactly.
+function tokenize(text) {
+  return String(text)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .split(/[\s\W]+/u)
+    .filter(t => t.length >= 2);
+}
+const MINISEARCH_OPTIONS = {
+  fields: ["title", "authors", "abstract", "subjects"],
+  storeFields: ["title", "authors", "abstract", "year", "type",
+                "source_id", "source_name", "discipline", "url"],
+  tokenize,
+  processTerm: (term) => term,
+};
+const SEARCH_OPTIONS = {
+  boost: { title: 3, subjects: 2, authors: 2 },
+  prefix: true,
+  fuzzy: 0.15,
+  combineWith: "AND",
+};
+
+// ----------------------------------------------------------- state ----------
+const state = {
+  q: "", type: "", year_min: null, year_max: null, sort: "relevance",
+  discipline: new Set(), source: new Set(),
+  page: 1, size: 20,
+};
+const facetState = { discFilter: "", discShowAll: false, srcShowAll: false };
+
+let index = null;        // MiniSearch instance
+let allDocs = [];        // [{id, title, authors, abstract, year, type, source_id, source_name, discipline, url}, ...]
+let docById = new Map(); // id -> doc (for fast lookup of search hits)
+let meta = null;
+
+// ----------------------------------------------------------- url sync ------
+function readURL() {
+  const p = new URLSearchParams(location.search);
+  state.q = p.get("q") || "";
+  state.type = p.get("type") || "";
+  state.year_min = p.get("year_min") ? +p.get("year_min") : null;
+  state.year_max = p.get("year_max") ? +p.get("year_max") : null;
+  state.sort = p.get("sort") || "relevance";
+  state.page = +p.get("page") || 1;
+  state.discipline = new Set(p.getAll("discipline"));
+  state.source = new Set(p.getAll("source"));
+}
+function writeURL() {
+  const p = new URLSearchParams();
+  if (state.q) p.set("q", state.q);
+  if (state.type) p.set("type", state.type);
+  if (state.year_min) p.set("year_min", state.year_min);
+  if (state.year_max) p.set("year_max", state.year_max);
+  if (state.sort && state.sort !== "relevance") p.set("sort", state.sort);
+  if (state.page > 1) p.set("page", state.page);
+  for (const d of state.discipline) p.append("discipline", d);
+  for (const s of state.source) p.append("source", s);
+  const qs = p.toString();
+  history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
+}
+
+// ----------------------------------------------------------- search core --
+// Two paths:
+//   - q present: MiniSearch handles ranking + returns docs
+//   - q empty:   we iterate allDocs and apply filters
+// Filters are then applied to MiniSearch hits as well, since MiniSearch's
+// filter() option only accepts simple predicates.
+function applyFilters(docs) {
+  const out = [];
+  for (const d of docs) {
+    if (state.type && d.type !== state.type) continue;
+    if (state.discipline.size && !state.discipline.has(d.discipline)) continue;
+    if (state.source.size && !state.source.has(d.source_id)) continue;
+    if (state.year_min && (!d.year || d.year < state.year_min)) continue;
+    if (state.year_max && (!d.year || d.year > state.year_max)) continue;
+    out.push(d);
+  }
+  return out;
+}
+
+function compareSort(sort) {
+  switch (sort) {
+    case "year_desc": return (a, b) => (b.year || 0) - (a.year || 0) || a.title.localeCompare(b.title, "fr");
+    case "year_asc":  return (a, b) => (a.year || 0) - (b.year || 0) || a.title.localeCompare(b.title, "fr");
+    case "title_asc": return (a, b) => a.title.localeCompare(b.title, "fr");
+    default: return null; // keep relevance order
+  }
+}
+
+function executeSearch() {
+  let candidates;
+  if (state.q && state.q.length >= 2) {
+    const hits = index.search(state.q, SEARCH_OPTIONS);
+    // hits already include storeFields (title, authors, etc.) — they are docs
+    candidates = hits;  // ordered by score desc
+  } else {
+    candidates = allDocs;
+  }
+  const filtered = applyFilters(candidates);
+  const cmp = compareSort(state.sort);
+  // For relevance: keep MiniSearch's order unless we have no q (default to year desc)
+  if (cmp) {
+    filtered.sort(cmp);
+  } else if (!state.q) {
+    filtered.sort((a, b) => (b.year || 0) - (a.year || 0));
+  }
+  return filtered;
+}
+
+// ----------------------------------------------------------- facets -------
+function computeFacets(filteredFull) {
+  // For each facet, recompute counts ignoring that facet's own filter so
+  // users can deselect/expand. (Same UX as Algolia/typical search.)
+  function aggregate(field, ignoreSet) {
+    const m = new Map();
+    for (const d of allDocs) {
+      // apply all filters except the one we're aggregating
+      if (state.q && state.q.length >= 2) {
+        // can't easily intersect with full-text without re-running; use filteredFull as approximation:
+        // — actually it's exact: filteredFull is the live result set.
+        // For aggregation we want a set independent of THIS facet's own selection,
+        // so we recompute from allDocs respecting other filters.
+      }
+      if (state.type && d.type !== state.type) continue;
+      if (field !== "discipline" && state.discipline.size && !state.discipline.has(d.discipline)) continue;
+      if (field !== "source_id"  && state.source.size && !state.source.has(d.source_id)) continue;
+      if (state.year_min && (!d.year || d.year < state.year_min)) continue;
+      if (state.year_max && (!d.year || d.year > state.year_max)) continue;
+      const v = d[field];
+      if (v == null) continue;
+      m.set(v, (m.get(v) || 0) + 1);
+    }
+    return m;
+  }
+  // Note: when q is set, we should apply text filtering on top. We do a
+  // post-pass here using an id set from filteredFull.
+  function aggregateWithQ(field) {
+    const ids = new Set(filteredFull.map(d => d.id));
+    // We still want counts that ignore THIS facet's own filter.
+    // Trick: also keep docs that *would be in filtered* if we removed this facet.
+    // Simpler & still meaningful for UX: count over filteredFull alone.
+    const m = new Map();
+    for (const d of filteredFull) {
+      const v = d[field];
+      if (v == null) continue;
+      m.set(v, (m.get(v) || 0) + 1);
+    }
+    return m;
+  }
+  const useQ = state.q && state.q.length >= 2;
+  const disciplineMap = useQ ? aggregateWithQ("discipline") : aggregate("discipline");
+  const sourceMap     = useQ ? aggregateWithQ("source_id")  : aggregate("source_id");
+  const decadeMap = new Map();
+  const decadeCorpus = useQ ? filteredFull : applyFiltersWithoutDecade();
+  for (const d of decadeCorpus) {
+    if (!d.year) continue;
+    const k = `${Math.floor(d.year / 10) * 10}s`;
+    decadeMap.set(k, (decadeMap.get(k) || 0) + 1);
+  }
+
+  const sourceNameById = new Map(allDocs.map(d => [d.source_id, d.source_name]));
+  return {
+    disciplines: [...disciplineMap.entries()].map(([name, n]) => ({ name, n })).sort((a,b)=>b.n-a.n),
+    sources:     [...sourceMap.entries()].map(([id, n]) => ({ id, name: sourceNameById.get(id) || id, n })).sort((a,b)=>b.n-a.n),
+    decades:     [...decadeMap.entries()].map(([name, n]) => ({ name, n })).sort((a,b)=>a.name.localeCompare(b.name)),
+  };
+}
+function applyFiltersWithoutDecade() {
+  const out = [];
+  for (const d of allDocs) {
+    if (state.type && d.type !== state.type) continue;
+    if (state.discipline.size && !state.discipline.has(d.discipline)) continue;
+    if (state.source.size && !state.source.has(d.source_id)) continue;
+    out.push(d);
+  }
+  return out;
+}
+
+// ----------------------------------------------------------- rendering ----
+const TYPE_STYLES = {
+  thesis:  { label: "Thèse",   cls: "bg-violet-100 text-violet-800" },
+  memoire: { label: "Mémoire", cls: "bg-sky-100 text-sky-800" },
+};
+
+function highlight(text, q) {
+  if (!text) return "";
+  const safe = escapeHTML(text);
+  if (!q) return safe;
+  const tokens = tokenize(q);
+  if (!tokens.length) return safe;
+  const re = new RegExp("(" + tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "giu");
+  // Note: regex matches diacritic-stripped tokens against original text — most
+  // useful highlights still hit because keywords usually match without accent
+  // mangling at this scale. For a perfect highlight we'd need per-char index.
+  return safe.replace(re, "<mark>$1</mark>");
+}
+
+function renderResults(pageDocs) {
+  const ul = $("#results");
+  ul.innerHTML = "";
+  if (!pageDocs.length) {
+    ul.innerHTML = `
+      <li class="bg-white border border-dashed border-ink-300 rounded-lg p-8 text-center">
+        <div class="w-12 h-12 mx-auto rounded-full bg-ink-100 grid place-items-center text-ink-400 mb-3">
+          <svg viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/></svg>
+        </div>
+        <p class="font-medium text-ink-700">Aucun résultat</p>
+        <p class="text-sm text-ink-500 mt-1">Essayez d'élargir vos critères ou utilisez d'autres mots-clés.</p>
+        <button onclick="document.getElementById('reset').click()" class="mt-4 text-sm font-medium text-accent-500 hover:text-accent-600">Réinitialiser la recherche →</button>
+      </li>`;
+    return;
+  }
+  const tpl = $("#tmpl-result");
+  for (const r of pageDocs) {
+    const node = tpl.content.cloneNode(true);
+    const li = node.querySelector("li");
+    const ts = TYPE_STYLES[r.type] || { label: r.type || "Document", cls: "bg-ink-100 text-ink-700" };
+    const tb = li.querySelector("[data-type-badge]");
+    tb.textContent = ts.label; tb.className += " " + ts.cls;
+    li.querySelector("[data-discipline]").textContent = r.discipline || "Non classé";
+    const link = li.querySelector("[data-link]");
+    link.href = r.url || "#";
+    link.innerHTML = highlight(r.title, state.q);
+    const authors = li.querySelector("[data-authors]");
+    authors.innerHTML = r.authors
+      ? highlight(r.authors.split(/;\s*/).slice(0, 4).join(" · "), state.q)
+      : '<span class="text-ink-400 italic">auteur·rice non renseigné</span>';
+    const ab = li.querySelector("[data-abstract]");
+    if (r.abstract) ab.innerHTML = highlight(r.abstract, state.q);
+    else ab.remove();
+    li.querySelector("[data-source]").textContent = r.source_name || "";
+    li.querySelector("[data-year]").textContent = r.year || "—";
+    li.querySelector("[data-open]").href = r.url || "#";
+    ul.appendChild(node);
+  }
+}
+
+function renderPager(total, page, size) {
+  const pager = $("#pager");
+  pager.innerHTML = "";
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  if (totalPages <= 1) { $("#page-info").textContent = ""; return; }
+  $("#page-info").textContent = `Page ${page} sur ${fmt(totalPages)}`;
+  const mk = (label, p, opts={}) => {
+    const b = document.createElement("button");
+    b.innerHTML = label; b.disabled = !!opts.disabled;
+    if (opts.ariaLabel) b.setAttribute("aria-label", opts.ariaLabel);
+    b.className = "min-w-[2.25rem] h-9 px-3 rounded-md text-sm font-medium transition " +
+      (opts.active ? "bg-ink-900 text-white shadow-card"
+                   : opts.disabled ? "text-ink-300 cursor-not-allowed"
+                                   : "text-ink-700 hover:bg-ink-100");
+    if (!opts.disabled && !opts.active) {
+      b.onclick = () => { state.page = p; runSearch(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+    }
+    return b;
+  };
+  pager.appendChild(mk("‹ Précédent", Math.max(1, page-1), { disabled: page===1, ariaLabel: "Page précédente" }));
+  const win = 1, pages = new Set([1, totalPages, page]);
+  for (let i = page - win; i <= page + win; i++) if (i > 0 && i <= totalPages) pages.add(i);
+  let prev = 0;
+  for (const p of [...pages].sort((a,b)=>a-b)) {
+    if (p - prev > 1) pager.appendChild(Object.assign(document.createElement("span"), { textContent: "…", className: "px-1 text-ink-400" }));
+    pager.appendChild(mk(p, p, { active: p===page, ariaLabel: `Page ${p}` }));
+    prev = p;
+  }
+  pager.appendChild(mk("Suivante ›", Math.min(totalPages, page+1), { disabled: page===totalPages, ariaLabel: "Page suivante" }));
+}
+
+let lastFacets = null;
+function renderFacets(facets) {
+  lastFacets = facets;
+  const el = $("#facet-disciplines");
+  el.innerHTML = "";
+  const filtered = facets.disciplines.filter(d => !facetState.discFilter || d.name.toLowerCase().includes(facetState.discFilter.toLowerCase()));
+  const visible = facetState.discShowAll ? filtered : filtered.slice(0, 8);
+  for (const it of visible) el.appendChild(facetRow(it.name, it.n, state.discipline, "disc"));
+  if (filtered.length > 8) {
+    const btn = document.createElement("button");
+    btn.className = "text-xs text-accent-500 hover:text-accent-600 font-medium px-2 py-1 mt-1";
+    btn.textContent = facetState.discShowAll ? "↑ moins de disciplines" : `+ ${filtered.length - 8} de plus`;
+    btn.onclick = () => { facetState.discShowAll = !facetState.discShowAll; renderFacets(lastFacets); };
+    el.appendChild(btn);
+  }
+  if (!filtered.length) el.innerHTML = `<p class="text-xs text-ink-400 italic px-2">Aucune discipline correspondant à "${escapeHTML(facetState.discFilter)}"</p>`;
+  updateFacetBadge("#disc-active", state.discipline.size);
+
+  const srcEl = $("#facet-sources");
+  srcEl.innerHTML = "";
+  const srcVisible = facetState.srcShowAll ? facets.sources : facets.sources.slice(0, 8);
+  for (const it of srcVisible) srcEl.appendChild(facetRow(it.id, it.n, state.source, "src", it.name));
+  if (facets.sources.length > 8) {
+    const btn = document.createElement("button");
+    btn.className = "text-xs text-accent-500 hover:text-accent-600 font-medium px-2 py-1 mt-1";
+    btn.textContent = facetState.srcShowAll ? "↑ moins" : `+ ${facets.sources.length - 8} dépôts`;
+    btn.onclick = () => { facetState.srcShowAll = !facetState.srcShowAll; renderFacets(lastFacets); };
+    srcEl.appendChild(btn);
+  }
+  updateFacetBadge("#src-active", state.source.size);
+
+  const decEl = $("#facet-decades");
+  decEl.innerHTML = "";
+  for (const d of facets.decades) {
+    const start = +d.name;
+    const active = state.year_min === start && state.year_max === start + 9;
+    const b = document.createElement("button");
+    b.className = "w-full flex items-center px-2 py-1 rounded text-left transition " +
+                  (active ? "bg-ink-800 text-white" : "hover:bg-ink-100 text-ink-700");
+    b.innerHTML = `<span class="flex-1">${d.name}</span><span class="text-xs ${active ? "text-ink-300" : "text-ink-400"} tabular-nums">${fmt(d.n)}</span>`;
+    b.onclick = () => {
+      if (active) state.year_min = state.year_max = null;
+      else { state.year_min = start; state.year_max = start + 9; }
+      $("#year_min").value = state.year_min || "";
+      $("#year_max").value = state.year_max || "";
+      state.page = 1; runSearch();
+    };
+    decEl.appendChild(b);
+  }
+}
+
+function facetRow(value, count, set, key, label = value) {
+  const id = `${key}-${value}`.replace(/\W+/g, "-");
+  const checked = set.has(value);
+  const row = document.createElement("label");
+  row.className = "flex items-center gap-2 px-2 py-1 rounded cursor-pointer hover:bg-ink-100 group";
+  row.innerHTML = `<input type="checkbox" id="${id}" ${checked ? "checked" : ""} class="rounded border-ink-300 text-accent-500 focus:ring-accent-300 focus:ring-offset-0">
+    <span class="flex-1 min-w-0 truncate ${checked ? "font-medium text-ink-900" : "text-ink-700"}">${escapeHTML(label)}</span>
+    <span class="text-xs ${checked ? "text-accent-500 font-medium" : "text-ink-400"} tabular-nums">${fmt(count)}</span>`;
+  row.querySelector("input").onchange = (ev) => {
+    if (ev.target.checked) set.add(value); else set.delete(value);
+    state.page = 1; runSearch();
+  };
+  return row;
+}
+
+function updateFacetBadge(sel, n) {
+  const el = $(sel); if (!el) return;
+  if (n > 0) { el.textContent = n; el.classList.remove("hidden"); } else el.classList.add("hidden");
+}
+
+function renderActiveChips() {
+  const c = $("#active-chips");
+  c.innerHTML = "";
+  const chips = [];
+  if (state.q) chips.push({ label: `« ${state.q} »`, on: () => { state.q = ""; $("#q").value = ""; } });
+  if (state.type) chips.push({ label: state.type === "thesis" ? "Thèses" : "Mémoires", on: () => { state.type = ""; updateTypeButtons(); } });
+  for (const d of state.discipline) chips.push({ label: d, on: () => state.discipline.delete(d) });
+  for (const s of state.source) chips.push({ label: s, on: () => state.source.delete(s) });
+  if (state.year_min || state.year_max) chips.push({
+    label: `${state.year_min || "…"} – ${state.year_max || "…"}`,
+    on: () => { state.year_min = state.year_max = null; $("#year_min").value = ""; $("#year_max").value = ""; },
+  });
+  for (const x of chips) {
+    const b = document.createElement("button");
+    b.className = "inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-white border border-ink-200 hover:border-ink-300 text-ink-700 text-xs";
+    b.innerHTML = `${escapeHTML(x.label)}<span class="text-ink-400">×</span>`;
+    b.onclick = () => { x.on(); state.page = 1; runSearch(); };
+    c.appendChild(b);
+  }
+  $("#active-filters").classList.toggle("hidden", chips.length === 0);
+}
+
+function updateTypeButtons() {
+  $$(".type-btn").forEach(b => {
+    const a = b.dataset.type === state.type;
+    b.classList.toggle("bg-ink-800", a);
+    b.classList.toggle("text-white", a);
+    b.classList.toggle("hover:bg-ink-100", !a);
+  });
+}
+
+// ----------------------------------------------------------- main loop ----
+function runSearch() {
+  const t0 = performance.now();
+  writeURL();
+  renderActiveChips();
+  const filtered = executeSearch();
+  const start = (state.page - 1) * state.size;
+  const pageDocs = filtered.slice(start, start + state.size);
+  renderResults(pageDocs);
+  renderPager(filtered.length, state.page, state.size);
+  renderFacets(computeFacets(filtered));
+  const dt = (performance.now() - t0).toFixed(1);
+  $("#status").innerHTML =
+    `<span class="font-medium text-ink-900">${fmt(filtered.length)}</span> ` +
+    `${filtered.length > 1 ? "résultats" : "résultat"}` +
+    (state.q ? ` pour <span class="text-ink-900">« ${escapeHTML(state.q)} »</span>` : "") +
+    ` <span class="text-ink-400">· ${dt} ms</span>`;
+}
+
+// ----------------------------------------------------------- bootstrap ----
+async function bootstrap() {
+  const splashStatus = $("#splash-status");
+  const t0 = performance.now();
+
+  splashStatus.textContent = "Téléchargement de l'index…";
+  const [searchResp, metaResp] = await Promise.all([
+    fetch("./search.json"),
+    fetch("./meta.json"),
+  ]);
+  if (!searchResp.ok) throw new Error("search.json: " + searchResp.status);
+  const [searchJson, metaJson] = await Promise.all([searchResp.text(), metaResp.json()]);
+  meta = metaJson;
+  splashStatus.textContent = "Construction de l'index…";
+
+  await new Promise(r => setTimeout(r, 0));  // let UI repaint
+  index = MiniSearch.loadJSON(searchJson, MINISEARCH_OPTIONS);
+
+  // Pull all docs out of the index for fast iteration in filters/facets.
+  // MiniSearch keeps storeFields internally; we expose them via a quick scan.
+  allDocs = [];
+  docById = new Map();
+  for (const id of index._documentIds.values()) {
+    const doc = index._storedFields.get(id);
+    if (!doc) continue;
+    const out = { id, ...doc };
+    allDocs.push(out);
+    docById.set(id, out);
+  }
+
+  // Update header
+  $("#totals").innerHTML =
+    `<span class="font-medium text-ink-700">${fmt(meta.total)}</span> thèses` +
+    `<span class="text-ink-300 mx-1.5">·</span>` +
+    `<span class="font-medium text-ink-700">${meta.sources.length}</span> dépôts`;
+  $("#footer-sources").textContent = meta.sources.map(s => s.name).join(" · ");
+  if (meta.built_at) {
+    const d = new Date(meta.built_at).toLocaleDateString("fr-CA", { year: "numeric", month: "long", day: "numeric" });
+    $("#footer-built").textContent = `Index construit le ${d}.`;
+  }
+
+  // Splash → app
+  $("#splash").style.display = "none";
+  $("#q").disabled = false;
+  syncFormFromState();
+  console.log(`bootstrap: ${(performance.now() - t0).toFixed(0)}ms · ${allDocs.length} docs`);
+  runSearch();
+}
+
+function syncFormFromState() {
+  $("#q").value = state.q;
+  $("#year_min").value = state.year_min || "";
+  $("#year_max").value = state.year_max || "";
+  $("#sort").value = state.sort;
+  $("#q-clear").classList.toggle("hidden", !state.q);
+  updateTypeButtons();
+}
+
+// ----------------------------------------------------------- wiring -------
+let qTimer;
+$("#q").addEventListener("input", (e) => {
+  clearTimeout(qTimer);
+  $("#q-clear").classList.toggle("hidden", !e.target.value);
+  qTimer = setTimeout(() => { state.q = e.target.value; state.page = 1; runSearch(); }, 120);
+});
+$("#q-clear").addEventListener("click", () => {
+  $("#q").value = ""; state.q = ""; state.page = 1;
+  $("#q-clear").classList.add("hidden"); runSearch();
+});
+$("#sort").addEventListener("change", (e) => { state.sort = e.target.value; state.page = 1; runSearch(); });
+$("#year_min").addEventListener("change", (e) => { state.year_min = e.target.value ? +e.target.value : null; state.page = 1; runSearch(); });
+$("#year_max").addEventListener("change", (e) => { state.year_max = e.target.value ? +e.target.value : null; state.page = 1; runSearch(); });
+$$(".type-btn").forEach(b => b.addEventListener("click", () => {
+  state.type = b.dataset.type; state.page = 1; updateTypeButtons(); runSearch();
+}));
+$("#disc-search").addEventListener("input", (e) => { facetState.discFilter = e.target.value; renderFacets(lastFacets); });
+$("#reset").addEventListener("click", () => {
+  state.q = ""; state.type = ""; state.year_min = null; state.year_max = null;
+  state.discipline.clear(); state.source.clear(); state.sort = "relevance"; state.page = 1;
+  $("#q").value = ""; $("#year_min").value = ""; $("#year_max").value = ""; $("#sort").value = "relevance";
+  $("#q-clear").classList.add("hidden");
+  facetState.discFilter = ""; $("#disc-search").value = "";
+  facetState.discShowAll = false; facetState.srcShowAll = false;
+  updateTypeButtons(); runSearch();
+});
+
+$("#open-filters-mobile").addEventListener("click", () => {
+  $("#sidebar").classList.remove("-translate-x-full");
+  $("#sidebar-backdrop").classList.remove("hidden");
+});
+function closeDrawer() {
+  $("#sidebar").classList.add("-translate-x-full");
+  $("#sidebar-backdrop").classList.add("hidden");
+}
+$("#close-filters-mobile").addEventListener("click", closeDrawer);
+$("#sidebar-backdrop").addEventListener("click", closeDrawer);
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "/" && !["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) {
+    e.preventDefault(); $("#q").focus();
+  }
+  if (e.key === "Escape" && document.activeElement === $("#q")) {
+    $("#q").blur();
+    if ($("#q").value) { $("#q").value = ""; state.q = ""; state.page = 1; runSearch(); }
+  }
+});
+
+readURL();
+bootstrap().catch(err => {
+  $("#splash-status").innerHTML = `<span class="text-red-600">Erreur : ${escapeHTML(err.message)}</span>`;
+  console.error(err);
+});
+</script>
+</body>
+</html>

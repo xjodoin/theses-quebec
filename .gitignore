@@ -15,6 +15,10 @@ data/theses.db-journal
 data/theses.db-wal
 data/theses.db-shm
 
+# Node (build pipeline)
+node_modules/
+dist/
+
 # tooling caches
 .playwright-mcp/
 .claude/
