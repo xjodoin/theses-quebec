@@ -9,19 +9,38 @@ from __future__ import annotations
 
 import html
 import re
+import unicodedata
 from typing import Optional
 
 THESIS_TYPE_HINTS = (
-    "thesis", "thèse", "these",
+    "thesis", "these",
     "dissertation",
-    "memoir", "mémoire", "memoire",
+    "memoir", "memoire",
     "doctoral", "master",
     "info:eu-repo/semantics/doctoralthesis",
     "info:eu-repo/semantics/masterthesis",
     "info:eu-repo/semantics/bachelorthesis",
 )
 
+DOCTORAL_TYPE_SIGNALS = (
+    "doctoral thesis", "doctorate", "doctorat",
+    "these de doctorat", "ph.d", "phd",
+    "info:eu-repo/semantics/doctoralthesis",
+)
+
+MASTER_TYPE_SIGNALS = (
+    "master thesis", "master's thesis", "masters thesis",
+    "memoire de maitrise",
+    "info:eu-repo/semantics/masterthesis",
+    "m.a.", "m.sc", "m.eng", "m.ed",
+)
+
 YEAR_RE = re.compile(r"\b(1[89]\d{2}|20\d{2}|21\d{2})\b")
+
+
+def _strip_diacritics(s: str) -> str:
+    nfkd = unicodedata.normalize("NFKD", s)
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 def _clean(text: str) -> str:
@@ -42,20 +61,45 @@ def _join(values: list[str] | None, sep: str = "; ") -> str:
 
 
 def _classify_type(dc: dict) -> Optional[str]:
-    """Return 'thesis' (doctoral), 'memoire' (master), or None."""
-    blob = " ".join(v.lower() for vals in (dc.get("type", []), dc.get("subject", []),
-                                            dc.get("description", [])) for v in vals)
-    title = " ".join(dc.get("title", [])).lower()
-    blob = blob + " " + title
+    """Return 'thesis' (doctoral), 'memoire' (master), or None.
 
+    Decision order, prioritising the explicit dc:type field over fuzzy
+    matches in title/abstract:
+      1. dc:type contains an explicit doctoral marker → 'thesis'
+      2. dc:type contains an explicit master marker → 'memoire'
+      3. dc:type contains a generic thesis hint → 'thesis'
+      4. dc:type is present but says something else (Article, Conference,
+         Book, journal, map, image, …) → None
+      5. dc:type absent or unrecognised: fall back to title/abstract
+         heuristics for repositories that don't expose a usable type.
+    """
+    type_values = [v.lower() for v in dc.get("type", []) if v]
+    type_blob = _strip_diacritics(" ".join(type_values))
+
+    if type_values:
+        if any(sig in type_blob for sig in DOCTORAL_TYPE_SIGNALS):
+            return "thesis"
+        if any(sig in type_blob for sig in MASTER_TYPE_SIGNALS):
+            return "memoire"
+        if any(hint in type_blob for hint in THESIS_TYPE_HINTS):
+            if "master" in type_blob or "maitrise" in type_blob \
+                    or "memoire" in type_blob:
+                return "memoire"
+            return "thesis"
+        return None
+
+    blob = _strip_diacritics(" ".join(
+        v.lower() for vals in (dc.get("subject", []), dc.get("description", []),
+                               dc.get("title", []))
+        for v in vals
+    ))
     if not any(hint in blob for hint in THESIS_TYPE_HINTS):
         return None
 
     if any(s in blob for s in ("doctoral", "ph.d", "phd", "doctorat", "doctorate")):
         return "thesis"
-    if any(s in blob for s in ("master", "maîtrise", "maitrise", "mémoire", "memoire", "m.a.", "m.sc")):
+    if any(s in blob for s in ("master", "maitrise", "memoire", "m.a.", "m.sc")):
         return "memoire"
-    # Generic thesis hint without level — default to "thesis" bucket
     return "thesis"
 
 

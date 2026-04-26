@@ -55,3 +55,55 @@ def test_no_false_positive_on_generic_word():
     rec = _rec(title="La participation citoyenne au départ",
                abstract="cette partie traite de l'art de la délibération")
     assert classify_discipline(rec) != "Arts visuels et médiatiques"
+
+
+def test_english_subject_education_only():
+    # McGill-style: English subject 'Education' must hit Sciences de l'éducation
+    # rather than fall through to OTHER.
+    assert classify_discipline(_rec(subjects="Education")) \
+        == "Sciences de l'éducation"
+
+
+def test_english_curriculum_keyword():
+    assert classify_discipline(_rec(title="A study of curriculum design")) \
+        == "Sciences de l'éducation"
+
+
+def test_english_literacy_keyword():
+    assert classify_discipline(_rec(subjects="Literacy intervention; Reading")) \
+        == "Sciences de l'éducation"
+
+
+def test_english_teaching_keyword():
+    assert classify_discipline(_rec(subjects="English language -- Study and teaching")) \
+        == "Sciences de l'éducation"
+
+
+def test_english_psychology_mental_health():
+    assert classify_discipline(_rec(title="Mental health interventions")) \
+        == "Psychologie"
+
+
+def test_english_sociology_subject():
+    assert classify_discipline(_rec(subjects="Rural sociology")) \
+        == "Sociologie"
+
+
+def test_english_biology_zoology():
+    assert classify_discipline(_rec(subjects="Zoology; Marine biology")) \
+        == "Biologie"
+
+
+def test_english_chemistry():
+    assert classify_discipline(_rec(title="Organic chemistry of natural products")) \
+        == "Chimie"
+
+
+def test_english_engineering_mechanical():
+    assert classify_discipline(_rec(subjects="Mechanical engineering")) \
+        == "Génie"
+
+
+def test_english_clinical_oncology():
+    assert classify_discipline(_rec(title="A clinical oncology trial")) \
+        == "Médecine"
