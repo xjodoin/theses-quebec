@@ -108,6 +108,25 @@ def test_english_clinical_oncology():
         == "Médecine"
 
 
+def test_ml_thesis_with_learning_strategies_in_abstract_not_education():
+    """Real bug: a CS/ML thesis on NMF was tagged Sciences de l'éducation
+    because its abstract mentioned 'autonomous (unsupervised) learning
+    strategies'. AI/ML keywords in title+subjects must win."""
+    record = _rec(
+        title="Meta-Unsupervised Learning: Application to Non-Negative Matrix Factorization",
+        subjects="Machine Learning; Matrix Factorization; Dimensionality reduction; Computer Science",
+        abstract=(
+            "Meta-learning was initially developed for supervised learning... "
+            "we apply it to non-negative matrix factorization (NMF), a widely "
+            "used technique. We compare with autonomous (unsupervised) "
+            "learning strategies. The source code is available."
+        ),
+        publisher="Bishop's University",
+    )
+    got = classify_discipline(record)
+    assert got == "Intelligence artificielle & apprentissage automatique", got
+
+
 def test_broad_keyword_education_in_abstract_does_not_misclassify():
     """Real bug from user feedback: an econometrics thesis with 'éducation' as
     a covariate in its abstract was tagged Sciences de l'éducation."""

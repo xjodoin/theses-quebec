@@ -1,17 +1,17 @@
 """Re-run rule-based classification on every record in the DB.
 
-Usage: python harvester/reclassify.py [--db data/theses.db]
+Usage:
+  python harvester/reclassify.py [--db data/theses.db]
+  python harvester/reclassify.py --force      # overwrite LLM classifications too
 
 Useful after enriching DISCIPLINE_RULES with new keywords, so existing
 records benefit without re-harvesting from sources.
 
-Update policy (preserves LLM-assigned classifications):
-- If current discipline is OTHER → adopt the new rule-based result
-  (whatever it is, even OTHER stays OTHER).
-- If current discipline is non-OTHER and the new rule-based result is
-  also non-OTHER but different → adopt the new result (rules improved).
-- If current discipline is non-OTHER and the new rule-based result is
-  OTHER → keep current value (likely set by the LLM).
+Update policy
+-------------
+By default, only records whose `discipline_source = 'rule'` are touched.
+Records previously classified by the LLM (`discipline_source = 'llm'`) or
+manually overridden (`'manual'`) are preserved unless `--force` is passed.
 """
 from __future__ import annotations
 
@@ -32,15 +32,26 @@ def main() -> int:
     ap.add_argument("--db", default=str(ROOT / "data" / "theses.db"))
     ap.add_argument("--dry-run", action="store_true",
                     help="Print the diff summary without writing.")
+    ap.add_argument("--force", action="store_true",
+                    help="Re-classify ALL records, including those marked "
+                         "discipline_source IN ('llm', 'manual'). Use after a "
+                         "major rule overhaul if you want rules to win.")
     args = ap.parse_args()
 
     conn = sqlite3.connect(args.db)
     conn.row_factory = sqlite3.Row
 
+    where = "" if args.force else "WHERE discipline_source = 'rule'"
     rows = list(conn.execute(
-        "SELECT oai_identifier, title, subjects, abstract, publisher, discipline "
-        "FROM theses"
+        "SELECT oai_identifier, title, subjects, abstract, publisher, "
+        "       discipline, discipline_source "
+        f"FROM theses {where}"
     ))
+
+    if not rows:
+        print("Nothing to reclassify "
+              "(no rows match — pass --force to re-classify everything).")
+        return 0
 
     other_to_specific = 0
     rule_to_rule = 0
@@ -65,8 +76,14 @@ def main() -> int:
             rule_to_rule += 1
             transitions[(cur, new)] += 1
             updates.append((new, row["oai_identifier"]))
+        elif cur != OTHER and new == OTHER:
+            # Don't fall back to OTHER from a non-OTHER classification.
+            # The previous rule must have matched on something we no longer
+            # carry — keep what we had rather than lose it.
+            pass
 
-    print(f"Scanned {len(rows)} records.")
+    print(f"Scanned {len(rows):,} records "
+          f"({'all' if args.force else 'rule-only'}).")
     print(f"  {other_to_specific} OTHER → specific category")
     print(f"  {rule_to_rule} reassigned between rule categories")
     print()
@@ -82,7 +99,8 @@ def main() -> int:
     if updates:
         with conn:
             conn.executemany(
-                "UPDATE theses SET discipline = ? WHERE oai_identifier = ?",
+                "UPDATE theses SET discipline = ?, discipline_source = 'rule' "
+                "WHERE oai_identifier = ?",
                 updates,
             )
         print(f"\nWrote {len(updates)} updates to {args.db}")
