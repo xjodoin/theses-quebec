@@ -100,8 +100,16 @@ tailwind.config = {
         <p class="text-xs text-ink-500">Recherche unifiée par discipline</p>
       </div>
     </a>
-    <div class="ml-auto flex items-center gap-4">
+    <div class="ml-auto flex items-center gap-2 md:gap-3">
       <div class="hidden md:flex items-center gap-2 text-xs text-ink-500" id="totals">…</div>
+      <a href="https://github.com/xjodoin/theses-quebec" target="_blank" rel="noopener"
+         class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-ink-600 hover:text-ink-900 border border-ink-200 hover:border-ink-300 rounded-md transition"
+         aria-label="Code source sur GitHub" title="Logiciel libre · MIT">
+        <svg viewBox="0 0 16 16" class="w-3.5 h-3.5" fill="currentColor">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.15-.39-.55-.94-.95-1.09-.27-.14-.66-.5-.01-.51.61-.01 1.05.56 1.2.79.7 1.18 1.83.84 2.27.64.07-.5.27-.84.5-1.04-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+        GitHub
+      </a>
       <button id="open-filters-mobile"
               class="md:hidden inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium border border-ink-200 rounded-md hover:bg-ink-100">
         <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2">
@@ -222,16 +230,113 @@ tailwind.config = {
   </section>
 </main>
 
-<footer class="border-t border-ink-200 mt-12">
-  <div class="max-w-[1400px] mx-auto px-4 lg:px-8 py-8 text-xs text-ink-500 grid sm:grid-cols-2 gap-4">
-    <div>
-      <p class="font-medium text-ink-700 mb-1">À propos</p>
-      <p>Métadonnées moissonnées via OAI-PMH depuis chaque dépôt institutionnel. Recherche locale dans ton navigateur — aucune requête serveur après le chargement initial. <a class="underline hover:text-ink-900" href="https://github.com/xjodoin/theses-quebec">Code source MIT</a>.</p>
+<footer class="border-t border-ink-200 mt-12 bg-white">
+  <div class="max-w-[1400px] mx-auto px-4 lg:px-8 py-10">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-8 text-sm">
+      <!-- Project description -->
+      <div>
+        <h3 class="font-serif font-semibold text-ink-900 mb-3 text-base">Thèses du Québec</h3>
+        <p class="text-ink-600 leading-relaxed">
+          Agrégateur des dépôts institutionnels québécois. Métadonnées
+          moissonnées via OAI-PMH, classification disciplinaire assistée par
+          LLM, recherche unifiée par discipline.
+        </p>
+        <p class="mt-4 text-xs text-ink-400">
+          Recherche 100 % locale dans ton navigateur — aucune requête serveur
+          après le chargement initial.
+        </p>
+        <p id="footer-built" class="mt-1 text-xs text-ink-400"></p>
+      </div>
+
+      <!-- Sources -->
+      <div>
+        <h3 class="font-semibold text-ink-700 uppercase tracking-wider text-xs mb-3">
+          13 dépôts moissonnés
+        </h3>
+        <p id="footer-sources" class="text-ink-600 leading-relaxed text-xs"></p>
+        <p class="mt-3 text-xs text-ink-400">
+          Métadonnées : © universités respectives, gouvernées par leurs
+          politiques d'accès libre. Voir
+          <a class="hover:text-ink-700 underline"
+             href="https://github.com/xjodoin/theses-quebec/blob/main/NOTICE"
+             target="_blank" rel="noopener">NOTICE</a>.
+        </p>
+      </div>
+
+      <!-- Open source / open data -->
+      <div>
+        <h3 class="font-semibold text-ink-700 uppercase tracking-wider text-xs mb-3">
+          Logiciel libre · Données ouvertes
+        </h3>
+        <ul class="space-y-2 text-ink-600">
+          <li>
+            <a class="inline-flex items-center gap-2 hover:text-ink-900 transition"
+               href="https://github.com/xjodoin/theses-quebec"
+               target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" class="w-4 h-4 shrink-0" fill="currentColor">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.15-.39-.55-.94-.95-1.09-.27-.14-.66-.5-.01-.51.61-.01 1.05.56 1.2.79.7 1.18 1.83.84 2.27.64.07-.5.27-.84.5-1.04-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+              </svg>
+              <span>Code source · GitHub</span>
+            </a>
+          </li>
+          <li>
+            <a class="inline-flex items-center gap-2 hover:text-ink-900 transition"
+               href="./search.json" target="_blank" rel="noopener">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>Télécharger l'index <code class="text-xs bg-ink-100 px-1 rounded">search.json</code></span>
+            </a>
+          </li>
+          <li>
+            <a class="inline-flex items-center gap-2 hover:text-ink-900 transition"
+               href="https://github.com/xjodoin/theses-quebec/blob/main/LICENSE"
+               target="_blank" rel="noopener">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M9 13h6 M9 17h6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>Licence MIT</span>
+            </a>
+          </li>
+          <li>
+            <a class="inline-flex items-center gap-2 hover:text-ink-900 transition"
+               href="https://github.com/xjodoin/theses-quebec/issues/new/choose"
+               target="_blank" rel="noopener">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01" stroke-linecap="round"/>
+              </svg>
+              <span>Signaler une erreur · suggestion</span>
+            </a>
+          </li>
+          <li>
+            <a class="inline-flex items-center gap-2 hover:text-ink-900 transition"
+               href="https://github.com/xjodoin/theses-quebec/blob/main/CONTRIBUTING.md"
+               target="_blank" rel="noopener">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8 M22 11h-6 M19 8v6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>Contribuer</span>
+            </a>
+          </li>
+        </ul>
+      </div>
     </div>
-    <div class="sm:text-right">
-      <p class="font-medium text-ink-700 mb-1">Sources</p>
-      <p id="footer-sources">…</p>
-      <p id="footer-built" class="mt-1 text-ink-400"></p>
+
+    <div class="mt-8 pt-6 border-t border-ink-100 flex flex-wrap items-center justify-between gap-4 text-xs text-ink-400">
+      <p>
+        Construit avec
+        <a class="hover:text-ink-700 underline"
+           href="https://www.openarchives.org/pmh/" target="_blank" rel="noopener">OAI-PMH</a>,
+        <a class="hover:text-ink-700 underline"
+           href="https://lucaong.github.io/minisearch/" target="_blank" rel="noopener">MiniSearch</a>,
+        <a class="hover:text-ink-700 underline"
+           href="https://tailwindcss.com/" target="_blank" rel="noopener">Tailwind CSS</a>.
+        Hébergé sur
+        <a class="hover:text-ink-700 underline"
+           href="https://pages.github.com/" target="_blank" rel="noopener">GitHub Pages</a>.
+      </p>
+      <p>v0.1 · prototype</p>
     </div>
   </div>
 </footer>
