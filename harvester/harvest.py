@@ -9,6 +9,7 @@ import argparse
 import sqlite3
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 from xml.etree import ElementTree as ET
@@ -18,7 +19,10 @@ import yaml
 
 from normalize import normalize_record
 from classify import classify_discipline
-from db import connect, upsert_thesis
+from db import (
+    connect, upsert_thesis, delete_thesis,
+    get_harvest_from, set_harvest_state,
+)
 
 NS = {
     "oai": "http://www.openarchives.org/OAI/2.0/",
@@ -41,12 +45,19 @@ DEFAULT_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
 
 def iter_records(base_url: str, metadata_prefix: str = "oai_dc",
                  set_spec: str | None = None,
+                 from_date: str | None = None,
                  max_records: int | None = None,
                  user_agent: str = DEFAULT_UA) -> Iterator[ET.Element]:
-    """Yield <record> elements from an OAI-PMH endpoint, following resumptionToken."""
+    """Yield <record> elements from an OAI-PMH endpoint, following resumptionToken.
+
+    `from_date` (UTC ISO 8601, e.g. "2026-04-25T00:00:00Z") narrows the harvest
+    to records whose datestamp is ≥ from_date — used for incremental harvests.
+    """
     params = {"verb": "ListRecords", "metadataPrefix": metadata_prefix}
     if set_spec:
         params["set"] = set_spec
+    if from_date:
+        params["from"] = from_date
     fetched = 0
     session = requests.Session()
     session.headers["User-Agent"] = user_agent
@@ -92,12 +103,22 @@ def iter_records(base_url: str, metadata_prefix: str = "oai_dc",
 
 
 def record_to_dict(record: ET.Element) -> dict:
-    """Pull header + Dublin Core fields out of an OAI record element."""
+    """Pull header + Dublin Core fields out of an OAI record element.
+
+    Returns a dict with key `_deleted: True` for tombstones (records the source
+    has marked deleted via `<header status="deleted">`). The caller deletes
+    them from the DB. Returns `{}` for malformed records that should be
+    skipped silently.
+    """
     header = record.find("oai:header", NS)
-    if header is None or header.get("status") == "deleted":
+    if header is None:
         return {}
 
     identifier = header.findtext("oai:identifier", default="", namespaces=NS).strip()
+
+    if header.get("status") == "deleted":
+        return {"_deleted": True, "oai_identifier": identifier}
+
     datestamp = header.findtext("oai:datestamp", default="", namespaces=NS).strip()
 
     dc_root = record.find("oai:metadata/oai_dc:dc", NS)
@@ -120,13 +141,17 @@ def record_to_dict(record: ET.Element) -> dict:
 
 
 def ingest_record(raw: ET.Element, source: dict, conn: sqlite3.Connection) -> str:
-    """Ingest one OAI <record>. Returns 'kept' | 'skipped'.
+    """Ingest one OAI <record>. Returns 'kept' | 'skipped' | 'deleted'.
 
     Raises on parse errors so callers can count them.
     """
     payload = record_to_dict(raw)
     if not payload:
         return "skipped"
+    if payload.get("_deleted"):
+        if payload.get("oai_identifier"):
+            delete_thesis(conn, payload["oai_identifier"])
+        return "deleted"
     normalized = normalize_record(payload, source)
     if not normalized:
         return "skipped"
@@ -137,19 +162,29 @@ def ingest_record(raw: ET.Element, source: dict, conn: sqlite3.Connection) -> st
 
 def harvest_source(source: dict, conn: sqlite3.Connection,
                    max_records: int | None = None,
-                   record_iter=None) -> dict:
+                   record_iter=None,
+                   full: bool = False) -> dict:
     """Harvest one source, return stats.
 
-    `record_iter` is an optional callable(source, max_records) -> Iterator[ET.Element]
+    Incremental by default: passes `from=<last_harvest_started>` to OAI-PMH
+    so only records modified since the previous harvest come through.
+    Pass `full=True` to force a complete re-harvest (ignores prior state).
+
+    `record_iter` is an optional callable(source, max_records, from_date)
     that overrides the default HTTP fetcher (used by the Playwright-based
     McGill harvester to bypass Azure WAF).
     """
-    stats = {"seen": 0, "kept": 0, "skipped": 0, "errors": 0}
-    print(f"\n=== {source['name']} ({source['base_url']}) ===", flush=True)
+    stats = {"seen": 0, "kept": 0, "skipped": 0, "deleted": 0, "errors": 0}
+    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    from_date = None if full else get_harvest_from(conn, source["id"])
 
-    iterator = (record_iter(source, max_records) if record_iter
+    note = f" (incremental from {from_date})" if from_date else " (full)"
+    print(f"\n=== {source['name']} ({source['base_url']}){note} ===", flush=True)
+
+    iterator = (record_iter(source, max_records, from_date) if record_iter
                 else iter_records(source["base_url"],
                                   set_spec=source.get("set"),
+                                  from_date=from_date,
                                   max_records=max_records))
     try:
         for raw in iterator:
@@ -165,6 +200,14 @@ def harvest_source(source: dict, conn: sqlite3.Connection,
                 if stats["errors"] <= 3:
                     print(f"  ! record error: {exc}", flush=True)
         conn.commit()
+        # Only checkpoint when the harvest reached completion (no fatal error).
+        # Crashed mid-run? We keep the previous checkpoint so the next attempt
+        # re-harvests the same window.
+        set_harvest_state(
+            conn, source["id"], started_at,
+            seen=stats["seen"], kept=stats["kept"], deleted=stats["deleted"],
+        )
+        conn.commit()
     except requests.HTTPError as exc:
         print(f"  HTTP error: {exc}", flush=True)
         stats["errors"] += 1
@@ -173,7 +216,8 @@ def harvest_source(source: dict, conn: sqlite3.Connection,
         stats["errors"] += 1
 
     print(f"  done: seen={stats['seen']} kept={stats['kept']} "
-          f"skipped={stats['skipped']} errors={stats['errors']}", flush=True)
+          f"skipped={stats['skipped']} deleted={stats['deleted']} "
+          f"errors={stats['errors']}", flush=True)
     return stats
 
 
@@ -184,6 +228,8 @@ def main() -> int:
     ap.add_argument("--max-per-source", type=int, default=None,
                     help="Cap records per source (useful for testing).")
     ap.add_argument("--only", nargs="+", help="Source ids to harvest (default: all).")
+    ap.add_argument("--full", action="store_true",
+                    help="Force a full re-harvest, ignoring prior incremental state.")
     args = ap.parse_args()
 
     sources = yaml.safe_load(Path(args.sources).read_text())
@@ -194,14 +240,17 @@ def main() -> int:
             return 2
 
     conn = connect(args.db)
-    totals = {"seen": 0, "kept": 0, "skipped": 0, "errors": 0}
+    totals = {"seen": 0, "kept": 0, "skipped": 0, "deleted": 0, "errors": 0}
     for source in sources:
-        stats = harvest_source(source, conn, max_records=args.max_per_source)
+        stats = harvest_source(source, conn,
+                               max_records=args.max_per_source,
+                               full=args.full)
         for k, v in stats.items():
             totals[k] += v
 
     print(f"\n=== TOTAL === seen={totals['seen']} kept={totals['kept']} "
-          f"skipped={totals['skipped']} errors={totals['errors']}")
+          f"skipped={totals['skipped']} deleted={totals['deleted']} "
+          f"errors={totals['errors']}")
     return 0
 
 

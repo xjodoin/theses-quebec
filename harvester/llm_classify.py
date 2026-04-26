@@ -270,7 +270,8 @@ def apply_to_db(updates: dict[str, str], db_path: Path) -> int:
             if disc not in CANONICAL_DISCIPLINES:
                 continue  # paranoia: schema enforces this, but trust nothing
             cur = conn.execute(
-                "UPDATE theses SET discipline = ? WHERE oai_identifier = ?",
+                "UPDATE theses SET discipline = ?, discipline_source = 'llm' "
+                "WHERE oai_identifier = ?",
                 (disc, oai),
             )
             n += cur.rowcount

@@ -72,12 +72,15 @@ def _fetch_xml(page: Page, url: str, retries: int = 3) -> str:
 
 
 def make_record_iter(page: Page):
-    """Return a callable(source, max_records) -> Iterator[ET.Element]."""
-    def _iter(source: dict, max_records: int | None) -> Iterator[ET.Element]:
+    """Return a callable(source, max_records, from_date) -> Iterator[ET.Element]."""
+    def _iter(source: dict, max_records: int | None,
+              from_date: str | None = None) -> Iterator[ET.Element]:
         base = source["base_url"]
         url = f"{base}?verb=ListRecords&metadataPrefix=oai_dc"
         if source.get("set"):
             url += f"&set={source['set']}"
+        if from_date:
+            url += f"&from={from_date}"
 
         fetched = 0
         while True:

@@ -38,9 +38,12 @@ def test_minimal_valid_record_parses():
     assert out["dc"]["type"] == ["Thesis"]
 
 
-def test_deleted_record_returns_empty():
+def test_deleted_record_signals_deletion():
+    """Tombstones must surface so the harvester can remove them from the DB,
+    not silently get dropped as malformed."""
     rec = _build_record(deleted=True)
-    assert record_to_dict(rec) == {}
+    out = record_to_dict(rec)
+    assert out == {"_deleted": True, "oai_identifier": "oai:test:1"}
 
 
 def test_multivalued_creator_collected_as_list():

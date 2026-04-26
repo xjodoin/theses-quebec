@@ -415,7 +415,22 @@ OTHER = "Autre / non classé"
 # variable in an econometrics thesis, "art" inside "state of the art").
 # These only match in the authoritative fields: title + subjects.
 BROAD_KEYWORDS = frozenset({
+    # Single-word generic terms that appear as covariates / passing mentions
+    # in unrelated abstracts (e.g. "education" as a control variable in
+    # an econometrics thesis).
     "education", "art", "history", "law", "design",
+
+    # ML/CS abstracts list application domains in passing — a thesis on
+    # NMF mentioning "applications in bioinformatics" is not a biotech
+    # thesis. Same for stats methods abstracts mentioning "epidemiology".
+    # Restricting these to title+subjects avoids the false positive while
+    # preserving the keyword for theses that actually focus on those
+    # domains (those theses surface the term in subjects/title).
+    "learning strategies", "online learning",
+    "bioinformatics", "bioinformatique",
+    "epidemiology", "epidemiologie",
+    "image processing", "topic modeling",
+    "recommendation systems",
 })
 
 
