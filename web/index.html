@@ -791,7 +791,8 @@ function renderFacets(facets) {
   const decEl = $("#facet-decades");
   decEl.innerHTML = "";
   for (const d of facets.decades) {
-    const start = +d.name;
+    // d.name is "1990s" / "2010s" — `+"2010s"` is NaN, parseInt strips the "s".
+    const start = parseInt(d.name, 10);
     const active = state.year_min === start && state.year_max === start + 9;
     const b = document.createElement("button");
     b.className = "w-full flex items-center px-2 py-1 rounded text-left transition " +
