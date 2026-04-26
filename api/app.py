@@ -74,12 +74,13 @@ def facets(
     q: str = "",
     discipline: list[str] | None = Query(None),
     source: list[str] | None = Query(None),
+    author: list[str] | None = Query(None),
     type: str | None = None,
     year_min: int | None = None,
     year_max: int | None = None,
 ) -> dict:
-    sql, params = _build_query(q, discipline, source, type, year_min, year_max,
-                                select="t.discipline, t.source_id, t.source_name, t.type, t.year")
+    sql, params = _build_query(q, discipline, source, author, type, year_min, year_max,
+                                select="t.discipline, t.source_id, t.source_name, t.type, t.year, t.authors")
     with get_conn() as conn:
         rows = conn.execute(sql, params).fetchall()
 
@@ -87,6 +88,7 @@ def facets(
     source_counts: dict[str, dict] = {}
     type_counts: dict[str, int] = {}
     decade_counts: dict[str, int] = {}
+    author_counts: dict[str, int] = {}
     for r in rows:
         d = r["discipline"] or "Autre / non classé"
         discipline_counts[d] = discipline_counts.get(d, 0) + 1
@@ -98,6 +100,16 @@ def facets(
         if r["year"]:
             decade = f"{(r['year'] // 10) * 10}s"
             decade_counts[decade] = decade_counts.get(decade, 0) + 1
+        if r["authors"]:
+            for raw in r["authors"].split(";"):
+                name = raw.strip()
+                if name:
+                    author_counts[name] = author_counts.get(name, 0) + 1
+
+    top_authors = sorted(
+        ({"name": k, "n": v} for k, v in author_counts.items()),
+        key=lambda x: (-x["n"], x["name"]),
+    )[:50]
 
     return {
         "total": len(rows),
@@ -111,6 +123,7 @@ def facets(
             ({"name": k, "n": v} for k, v in decade_counts.items()),
             key=lambda x: x["name"],
         ),
+        "authors": top_authors,
     }
 
 
@@ -127,6 +140,7 @@ def search(
     q: str = "",
     discipline: list[str] | None = Query(None),
     source: list[str] | None = Query(None),
+    author: list[str] | None = Query(None),
     type: str | None = None,
     year_min: int | None = None,
     year_max: int | None = None,
@@ -144,9 +158,9 @@ def search(
     if explicit_order is None:
         explicit_order = "rank ASC, t.year DESC" if q else "t.year DESC, t.title ASC"
 
-    count_sql, count_params = _build_query(q, discipline, source, type, year_min, year_max,
+    count_sql, count_params = _build_query(q, discipline, source, author, type, year_min, year_max,
                                             select="COUNT(*) AS n")
-    sql, params = _build_query(q, discipline, source, type, year_min, year_max,
+    sql, params = _build_query(q, discipline, source, author, type, year_min, year_max,
                                 select="t.*",
                                 order=explicit_order,
                                 limit=size, offset=offset)
@@ -167,6 +181,7 @@ def _build_query(
     q: str,
     discipline: list[str] | None,
     source: list[str] | None,
+    author: list[str] | None,
     type_: str | None,
     year_min: int | None,
     year_max: int | None,
@@ -193,6 +208,15 @@ def _build_query(
     if source:
         where.append("t.source_id IN (" + ",".join("?" * len(source)) + ")")
         params.extend(source)
+    if author:
+        # Match around delimiters so "Tremblay" doesn't accidentally match
+        # "Tremblay-Roy"; the stored column is semicolon-separated, optionally
+        # with surrounding whitespace, so collapse "; " → ";" before INSTR.
+        for a in author:
+            where.append(
+                "INSTR(';' || REPLACE(REPLACE(t.authors, '; ', ';'), ' ;', ';') || ';', ?) > 0"
+            )
+            params.append(f";{a};")
     if type_:
         where.append("t.type = ?")
         params.append(type_)
