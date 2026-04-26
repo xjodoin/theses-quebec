@@ -1,0 +1,15 @@
+{
+  "name": "theses-quebec-static",
+  "version": "0.1.0",
+  "description": "Static-site build pipeline: SQLite → MiniSearch index → dist/",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "serve": "node scripts/serve.mjs"
+  },
+  "devDependencies": {
+    "better-sqlite3": "^11.0.0",
+    "minisearch": "^7.1.0"
+  }
+}

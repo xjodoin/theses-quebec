@@ -4,9 +4,11 @@
 > avec **vraie recherche par discipline** — la fonctionnalité qui manque
 > à Érudit.
 
+**[🔎 Démo en ligne — xjodoin.github.io/theses-quebec](https://xjodoin.github.io/theses-quebec/)**
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/status-prototype-orange)](#statut--limites)
+[![Pages](https://img.shields.io/badge/demo-live-success)](https://xjodoin.github.io/theses-quebec/)
 [![Records](https://img.shields.io/badge/records-5%2C002-success)]()
 [![Sources](https://img.shields.io/badge/sources-13%20d%C3%A9p%C3%B4ts-success)]()
 
@@ -24,6 +26,7 @@ université, type, année et discipline.
 - [Pourquoi ce projet](#pourquoi-ce-projet)
 - [Architecture](#architecture)
 - [Démarrage rapide](#démarrage-rapide)
+- [Build statique pour GitHub Pages](#build-statique-pour-github-pages)
 - [Moissonner les dépôts](#moissonner-les-dépôts)
 - [Classificateur LLM (Gemini 3 Flash)](#classificateur-llm-gemini-3-flash)
 - [Structure du projet](#structure-du-projet)
@@ -126,6 +129,44 @@ explorer immédiatement, sans dépendre de la disponibilité des serveurs OAI.
 
 ---
 
+## Build statique pour GitHub Pages
+
+Une seconde version 100 % statique est générée à chaque push : **MiniSearch**
+construit un index plein-texte BM25 *à la compilation*, le navigateur le
+charge en une seule requête (~3 Mo gzippé) puis fait toute la recherche +
+les facettes en RAM. **Sub-10 ms par requête, sans serveur, hébergement
+gratuit sur GitHub Pages.**
+
+```bash
+# Installer Node 20+ et les deps
+npm install
+
+# Builder dist/ (lit data/theses.db, produit dist/{index.html,search.json,meta.json})
+npm run build
+
+# Servir localement (http://localhost:5000) avec gzip on-the-fly
+npm run serve
+```
+
+Le déploiement Pages est automatique : le workflow
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) tourne à chaque
+push qui touche `data/theses.db`, `scripts/build.mjs` ou `web/static.html`.
+
+Le moissonnage hebdomadaire commit la DB rafraîchie → déclenche Pages → le
+site est à jour automatiquement.
+
+| Caractéristique | Version FastAPI | Version statique (Pages) |
+|---|---|---|
+| Hébergement | VPS / PaaS | GitHub Pages (gratuit, CDN) |
+| Coût mensuel | 0 – 5 $ | 0 $ |
+| Recherche | SQLite FTS5 (server) | MiniSearch BM25 (browser) |
+| Latence requête | 10–50 ms (HTTP + SQL) | 1–10 ms (RAM) |
+| Premier chargement | < 1 s | ~3 MB d'index (caché ensuite) |
+| Maintenance | Service à surveiller | Aucune |
+| Re-utilisation des données | API JSON | `search.json` ouvert |
+
+---
+
 ## Moissonner les dépôts
 
 ```bash
@@ -222,10 +263,15 @@ theses-quebec/
 │   ├── llm_classify.py       Classificateur Gemini 3 Flash batch
 │   └── db.py                 Schéma SQLite + FTS5 + triggers
 ├── web/
-│   └── index.html            Frontend Tailwind + vanilla JS
+│   ├── index.html            Frontend pour la version FastAPI
+│   └── static.html           Frontend pour la version statique (Pages)
+├── scripts/
+│   ├── build.mjs             SQLite → MiniSearch index → dist/
+│   └── serve.mjs             Serveur local de prévisualisation
 ├── data/
 │   └── theses.db             Base SQLite pré-moissonnée (LFS)
 ├── .env.example              Template pour les secrets
+├── package.json              Build pipeline statique
 ├── requirements.txt
 ├── LICENSE                   MIT
 ├── NOTICE                    Provenance des métadonnées moissonnées
@@ -252,18 +298,17 @@ Voir [`.env.example`](.env.example) pour le modèle.
 
 ## Déploiement
 
-Le frontend statique + l'API tiennent dans une seule instance Python. Trois
-voies typiques :
+Trois voies typiques, par ordre croissant de complexité :
 
-- **Tout statique (le moins cher)** — dump SQLite → JSON, frontend +
-  MiniSearch sur Cloudflare Pages, harvest via GitHub Actions. Coût : 0 $/mois.
+- **GitHub Pages (statique)** — déjà en place. `npm run build` → push →
+  déploiement auto. Coût : 0 $. Voir
+  [Build statique pour GitHub Pages](#build-statique-pour-github-pages).
 - **Fly.io free tier** — Dockerfile + `fly.toml`, volume persistant pour le
   SQLite, machine planifiée pour le harvest. Coût : 0–3 $/mois.
+  Pas encore matérialisé — ouvre une issue si intéressé.
 - **Self-hosted** — `systemd` + Caddy (HTTPS auto) sur n'importe quel VPS
   Linux. Cron pour le harvest. ~5 fichiers de config, stable des années.
-
-Aucun de ces modèles n'est encore matérialisé dans le repo — ouvre une issue
-si tu en veux un en particulier.
+  Pas encore matérialisé.
 
 ---
 
