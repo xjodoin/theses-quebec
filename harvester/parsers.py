@@ -119,7 +119,14 @@ def parse_dim(record):
 
         # Project to DC-equivalent shape downstream code expects.
         if schema == "dc":
-            _add(fields, element, text)
+            # DSpace emits authors as `dc.contributor.author` rather than
+            # `dc.creator`. Map them onto `creator` so normalize._join picks
+            # them up; other contributor qualifiers (advisor, editor) stay
+            # under `contributor` and are not currently surfaced.
+            if element == "contributor" and qualifier == "author":
+                _add(fields, "creator", text)
+            else:
+                _add(fields, element, text)
         elif element == "degree" and qualifier in ("level", "name"):
             # Surface degree level/name as `type` for normalize._classify_type.
             _add(fields, "type", text)
