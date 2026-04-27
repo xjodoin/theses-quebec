@@ -19,7 +19,7 @@
 
 import Database from "better-sqlite3";
 import * as pagefind from "pagefind";
-import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, rmSync, copyFileSync, cpSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
@@ -109,8 +109,11 @@ for (const r of rows) {
   }
   if (r.source_id) filters.source = [r.source_id];
   if (r.source_name) meta.source_name = r.source_name;
-  if (r.type) filters.type = [r.type];
-  if (r.type) meta.type_label = TYPE_LABEL[r.type] || r.type;
+  if (r.type) {
+    filters.type = [r.type];
+    meta.type = r.type;
+    meta.type_label = TYPE_LABEL[r.type] || r.type;
+  }
   if (r.discipline) {
     filters.discipline = [r.discipline];
     meta.discipline = r.discipline;
@@ -167,6 +170,13 @@ const html = readFileSync(resolve(ROOT, "web/static.html"), "utf8")
   .replaceAll("__JSONLD_S__", String(meta.sources.length))
   .replaceAll("__JSONLD_DATE__", buildDate);
 writeFileSync(resolve(DIST, "index.html"), html);
+
+// Copy the shared frontend modules. These live in web/ alongside static.html;
+// the FastAPI uvicorn server serves them directly, but the static Pages site
+// needs them at the root.
+copyFileSync(resolve(ROOT, "web/common.js"), resolve(DIST, "common.js"));
+mkdirSync(resolve(DIST, "backends"), { recursive: true });
+cpSync(resolve(ROOT, "web/backends"), resolve(DIST, "backends"), { recursive: true });
 
 writeFileSync(
   resolve(DIST, "sitemap.xml"),
