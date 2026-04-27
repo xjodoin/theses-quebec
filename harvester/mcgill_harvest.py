@@ -39,6 +39,14 @@ McGILL_SOURCE = {
     "platform": "blacklight",
     "base_url": "https://escholarship.mcgill.ca/catalog/oai",
     "set": "DocumentType:Thesis",
+    # McGill DOES expose oai_etdms (with the etdms-1-0 dash-namespace) and
+    # a `<degree><discipline>` field carrying source-curated department
+    # data — but at least one record in the Thesis set fails to serialize
+    # as etdms (cannotDisseminateFormat), and the OAI spec makes that an
+    # all-or-nothing per-request error. Sticking with oai_dc gets us every
+    # record; we lose the explicit discipline field for McGill but the
+    # classifier still has subjects+title+abstract to work with.
+    "metadata_prefix": "oai_dc",
     "home_url": "https://escholarship.mcgill.ca/",
 }
 
@@ -76,7 +84,8 @@ def make_record_iter(page: Page):
     def _iter(source: dict, max_records: int | None,
               from_date: str | None = None) -> Iterator[ET.Element]:
         base = source["base_url"]
-        url = f"{base}?verb=ListRecords&metadataPrefix=oai_dc"
+        prefix = source.get("metadata_prefix", "oai_dc")
+        url = f"{base}?verb=ListRecords&metadataPrefix={prefix}"
         if source.get("set"):
             url += f"&set={source['set']}"
         if from_date:

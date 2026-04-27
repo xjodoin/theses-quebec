@@ -18,7 +18,7 @@ import requests
 import yaml
 
 from normalize import normalize_record
-from classify import classify_discipline
+from classify import classify_discipline_detailed
 from parsers import parse_record
 from db import (
     connect, upsert_thesis, delete_thesis,
@@ -127,7 +127,9 @@ def ingest_record(raw: ET.Element, source: dict, conn: sqlite3.Connection) -> st
     normalized = normalize_record(payload, source)
     if not normalized:
         return "skipped"
-    normalized["discipline"] = classify_discipline(normalized)
+    disc, source_tag = classify_discipline_detailed(normalized)
+    normalized["discipline"] = disc
+    normalized["discipline_source"] = source_tag if source_tag != "none" else "rule"
     upsert_thesis(conn, normalized)
     return "kept"
 

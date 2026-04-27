@@ -52,6 +52,8 @@ DISCIPLINE_RULES: list[tuple[str, list[str]]] = [
         "mental health", "sante mentale",
         "human behavior", "human behaviour", "comportement humain",
         "social behavior", "social behaviour", "comportement social",
+        "psychoeducation",  # UQTR program name
+        "art therapy", "art-therapie", "arttherapie",
     ]),
 
     # --- Sciences sociales ---
@@ -100,6 +102,7 @@ DISCIPLINE_RULES: list[tuple[str, list[str]]] = [
     ("Économie", [
         "economie", "economics", "econometrie", "econometrics",
         "economic", "economique",
+        "sciences economiques", "economic sciences",
     ]),
     ("Relations industrielles", [
         "relations industrielles", "industrial relations",
@@ -225,10 +228,19 @@ DISCIPLINE_RULES: list[tuple[str, list[str]]] = [
         "odontologie", "orthodontie", "orthodontics",
     ]),
     ("Médecine vétérinaire", [
-        "medecine veterinaire", "veterinary medicine", "veterinaire",
-        "veterinary",
+        "medecine veterinaire", "veterinary medicine",
+        "veterinaire", "veterinary", "sciences veterinaires",
+        "sciences cliniques veterinaires",
     ]),
     ("Médecine", [
+        # Common Quebec biomedical program names (UdeM, Sherbrooke, INRS)
+        "biomedicale", "biomedical", "sciences biomedicales",
+        "biomedical sciences",
+        "sciences cliniques", "clinical sciences",
+        "sciences experimentales de la sante",
+        "sciences neurologiques",
+        "sante communautaire", "community health",
+        # Generic and specialty
         "medecine", "medicine", "medical", "medecin", "medicale",
         "clinical", "clinique", "oncology", "oncologie",
         "cardiology", "cardiologie", "neurology", "neurologie",
@@ -259,6 +271,7 @@ DISCIPLINE_RULES: list[tuple[str, list[str]]] = [
         "biologie", "biology", "biological", "biologique",
         "zoology", "zoologie", "botany", "botanique",
         "physiologie animale", "physiologie vegetale",
+        "sciences biologiques", "biological sciences",
     ]),
 
     # --- Sciences de l'environnement ---
@@ -420,6 +433,17 @@ BROAD_KEYWORDS = frozenset({
     # an econometrics thesis).
     "education", "art", "history", "law", "design",
 
+    # "literature" appears constantly in abstracts in the sense of
+    # "literature review" / "from the literature" — not the discipline.
+    "litterature", "literature", "literary",
+
+    # Math terms that get used in engineering/CS subjects too: the rule
+    # for Mathématiques shouldn't win on a CS thesis whose subjects say
+    # "graph topology" or "computational geometry". We keep these as
+    # signals only when ALONE in title/subjects (typical of pure-math
+    # theses).
+    "topologie", "topology", "geometrie", "geometry", "algebrique",
+
     # ML/CS abstracts list application domains in passing — a thesis on
     # NMF mentioning "applications in bioinformatics" is not a biotech
     # thesis. Same for stats methods abstracts mentioning "epidemiology".
@@ -443,9 +467,18 @@ def _strip(text: str) -> str:
 
 
 def _make_pattern(kw: str) -> re.Pattern:
+    """Word-boundary regex that tolerates a trailing plural -s.
+
+    Without `s?`, the keyword `mathematique` (singular) would not match the
+    actual subject text `mathematiques` (plural). Almost every French/English
+    discipline term has a regular plural; baking it in here is more robust
+    than maintaining doubled keyword lists.
+    """
     if " " in kw:
+        # Multi-word keywords keep strict matching — adding s? at the end of
+        # phrases like "machine learning" would be too noisy.
         return re.compile(re.escape(kw))
-    return re.compile(rf"(?:^|[^a-z]){re.escape(kw.strip())}(?:[^a-z]|$)")
+    return re.compile(rf"(?:^|[^a-z]){re.escape(kw.strip())}s?(?:[^a-z]|$)")
 
 
 # Each entry: (discipline, [(pattern, is_broad), ...]).
@@ -462,19 +495,66 @@ _compiled: list[tuple[str, list[tuple[re.Pattern, bool]]]] = [
 
 
 def classify_discipline(record: dict) -> str:
-    """Return the canonical discipline string for a normalized thesis record."""
+    """Return the canonical discipline string. See `classify_discipline_detailed`."""
+    disc, _source = classify_discipline_detailed(record)
+    return disc
+
+
+def classify_discipline_detailed(record: dict) -> tuple[str, str]:
+    """Three-pass classifier; returns (discipline, source_tag).
+
+    `source_tag` reports which pass produced the match — useful in the UI
+    and for telemetry on classification quality:
+      'auth'          — Pass 0: authoritative_discipline string from the source
+      'rule'          — Pass 1: title + subjects + publisher (primary blob)
+      'rule_abstract' — Pass 2: abstract fallback, broad keywords excluded
+      'none'          — no match (returns OTHER)
+
+    Strategy details:
+      Pass 0 — match against the **authoritative discipline** string only,
+        when the source provided one (DSpace `dc:subject@discipline`,
+        ETDMS `<degree><discipline>`, etc.). This is the institution's own
+        classification.
+      Pass 1 — primary blob: author-curated + source-curated fields. *All*
+        keywords (including broad ones) are tried.
+      Pass 2 — abstract, with **broad keywords excluded**. The abstract is
+        noisy: it cites related work, application domains, covariates.
+        Broad keywords like "education", "litterature", "geometrie" appear
+        incidentally and would otherwise hijack the classification.
+
+    Within each pass, rules are scanned in declared order (specific before
+    general), so e.g. "didactique" beats "education".
+    """
+    # Pass 0: authoritative_discipline alone.
+    auth = (record.get("authoritative_discipline") or "").strip()
+    if auth:
+        auth_blob = _strip(auth)
+        for discipline, patterns in _compiled:
+            for pat, _broad in patterns:
+                if pat.search(auth_blob):
+                    return discipline, "auth"
+
     primary_blob = _strip(" ".join([
         record.get("subjects") or "",
         record.get("title") or "",
         record.get("publisher") or "",
     ]))
-    full_blob = primary_blob + " " + _strip(record.get("abstract") or "")
-    if not full_blob.strip():
-        return OTHER
+    abstract_blob = _strip(record.get("abstract") or "")
+    if not (primary_blob + abstract_blob).strip():
+        return OTHER, "none"
 
+    # Pass 1: primary blob — every keyword counts.
+    for discipline, patterns in _compiled:
+        for pat, _broad in patterns:
+            if pat.search(primary_blob):
+                return discipline, "rule"
+
+    # Pass 2: abstract — broad keywords excluded so incidental mentions
+    # don't trigger.
     for discipline, patterns in _compiled:
         for pat, broad in patterns:
-            target = primary_blob if broad else full_blob
-            if pat.search(target):
-                return discipline
-    return OTHER
+            if broad:
+                continue
+            if pat.search(abstract_blob):
+                return discipline, "rule_abstract"
+    return OTHER, "none"
