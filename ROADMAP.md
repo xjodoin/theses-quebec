@@ -27,6 +27,12 @@ toutes répondent (UQAM/TÉLUQ inclus).
 par requête). Abstracts re-indexés (1 500 chars). Stemming
 français + anglais natif. Excerpts surlignés natifs.
 
+**v0.5.1 livrée le 27 avril 2026** — Refactor : extraction de toute la
+logique UI partagée (~780 lignes) dans `web/common.js` + adaptateurs
+`web/backends/{fastapi,pagefind}.js`. L'a11y de `web/index.html` est
+désormais automatiquement disponible sur `web/static.html` (fini le
+backport). Click sur titre ouvre le modal détail (et non la source).
+
 **Légende**
 
 - **Effort** : `S` ≤ 4 h · `M` ½–2 jours · `L` une semaine et plus
@@ -72,7 +78,7 @@ français + anglais natif. Excerpts surlignés natifs.
 | # | Amélioration | Effort | Valeur | Statut |
 |---|---|---|---|---|
 | 3.1 | **Tests Python** — `pytest` sur `normalize.py` (extraction année, type), `classify.py` (mots-clés). Ajouter à `ci.yml`. | S | ✶✶ | ✅ `e00c3b3` (24 tests) |
-| 3.2 | **Audit accessibilité** — ARIA labels sur facettes/pagination, traversée clavier des résultats, contraste. Test lighthouse. | M | ✶✶ | 🟡 v0.3 sur web/index.html (FastAPI) ; à backporter sur web/static.html |
+| 3.2 | **Audit accessibilité** — ARIA labels sur facettes/pagination, traversée clavier des résultats, contraste. Test lighthouse. | M | ✶✶ | ✅ v0.3 (FastAPI) + v0.5.1 (auto-applique aux 2 versions via common.js partagé) |
 | 3.3 | **i18n EN** — toggle FR/EN dans le header. Interface uniquement, pas de traduction des résumés. | M | ✶ | ⏳ |
 | 3.4 | **OGP / cartes sociales** — `<meta>` pour partages X/Bluesky/LinkedIn. Capture statique du site. | S | ✶ | ⏳ |
 | 3.5 | **Sitemap.xml + JSON-LD `Dataset`** — visibilité Google Scholar / Datasets. | S | ✶✶ | ✅ v0.3 |
@@ -148,13 +154,19 @@ français + anglais natif. Excerpts surlignés natifs.
 - Abstracts re-indexés (perdus en v0.3-v0.4 pour cause de taille)
 - Stemming français + anglais natif
 
+## v0.5.1 — livrée ✅ (architecture)
+- **Refactor majeur** : `web/common.js` (UI partagée) + 2 backends (`fastapi.js`/`pagefind.js`)
+- 780+ lignes de duplication JS éliminées
+- A11y backportée automatiquement (3.2 désormais complet)
+- UX : click sur titre ouvre le modal au lieu de naviguer
+
 ## v0.6 — proposition (qualité + données)
-1. **3.2 partie 2** Backporter l'a11y sur `web/static.html` (Pagefind version)
-2. **5.2** « Did you mean? » sur 0 résultat
-3. **5.5** Graphique temporel (distribution annuelle par discipline)
-4. **3.6** Documentation interne (`docs/` schema DB, format JSONL Gemini)
-5. **2.7** Fallback PDF text extraction pour records sans abstract
-6. **1.7** Highlight diacritiques-aware
+1. **5.2** « Did you mean? » sur 0 résultat
+2. **5.5** Graphique temporel (distribution annuelle par discipline)
+3. **3.6** Documentation interne (`docs/` schema DB, format JSONL Gemini)
+4. **2.7** Fallback PDF text extraction pour records sans abstract
+5. **1.7** Highlight diacritiques-aware
+6. **5.6** Sauvegarder les recherches récentes (localStorage)
 
 ## v0.7+ — propositions ouvertes
 - **2.6** Dépôts canadiens hors-Québec (rebrand `theses-canada`?)
