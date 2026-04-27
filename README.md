@@ -9,13 +9,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](https://www.python.org/)
 [![Pages](https://img.shields.io/badge/demo-live-success)](https://xjodoin.github.io/theses-quebec/)
-[![Records](https://img.shields.io/badge/records-5%2C002-success)]()
-[![Sources](https://img.shields.io/badge/sources-13%20d%C3%A9p%C3%B4ts-success)]()
+[![Records](https://img.shields.io/badge/records-177%2C413-success)]()
+[![Sources](https://img.shields.io/badge/sources-16%20d%C3%A9p%C3%B4ts-success)]()
 
-5 002 thèses et mémoires moissonnés depuis 13 dépôts institutionnels (Concordia,
-McGill, UdeM, Sherbrooke, Bishop's, Laval, le réseau UQ, INRS, ÉTS), classés
-dans 74 disciplines canoniques (taxonomie alignée sur Érudit), indexés en plein texte avec facettes par
-université, type, année et discipline.
+177 413 thèses et mémoires moissonnés depuis 16 dépôts institutionnels (Concordia,
+McGill, UdeM, Sherbrooke, Bishop's, Laval, Polytechnique, le réseau UQ, INRS, ÉTS,
+TÉLUQ), classés dans 74 disciplines canoniques (taxonomie alignée sur Érudit),
+indexés en plein texte avec facettes par université, type, année et discipline.
 
 ![Capture de l'agrégateur — recherche par discipline](v3-after-llm.png)
 
@@ -61,47 +61,57 @@ Ce projet :
 Résultat : 28,6 % de thèses non classées par les règles → **0,02 %** après le
 batch LLM.
 
+> **v0.6** ajoute la suggestion « *Did you mean?* » sur 0 résultat (Levenshtein
+> sur le vocabulaire des facettes) et un graphique temporel par décennie dans
+> la sidebar.
+
 ---
 
 ## Architecture
 
 ```
                 ┌──────────────────────────────────┐
-                │  13 dépôts institutionnels QC    │
+                │  16 dépôts institutionnels QC    │
                 │  (EPrints · DSpace · Hyrax)      │
                 └────────────────┬─────────────────┘
-                                 │  OAI-PMH 2.0
+                                 │  OAI-PMH 2.0 (oai_dc · dim · oai_etdms · uketd_dc)
                                  │  + Playwright (McGill, Azure WAF)
                                  ▼
                     ┌─────────────────────────┐
                     │   harvester/            │
-                    │   ├ harvest.py          │  Dublin Core
+                    │   ├ harvest.py          │  multi-format DC
+                    │   ├ parsers.py          │  4 parseurs (oai_dc/dim/etdms/uketd)
                     │   ├ normalize.py        │  schéma unifié
-                    │   ├ classify.py         │  règles (~71 %)
-                    │   └ llm_classify.py     │  Gemini 3 (le résidu)
+                    │   ├ classify.py         │  règles 3-pass (auth/primary/abstract)
+                    │   └ llm_classify.py     │  Gemini 3 Flash batch (résidu)
                     └────────────┬────────────┘
                                  ▼
                     ┌─────────────────────────┐
-                    │   data/theses.db        │  SQLite + FTS5
+                    │   data/theses.db        │  SQLite + FTS5 (LFS)
                     └────────────┬────────────┘
                                  ▼
-                    ┌─────────────────────────┐
-                    │   api/app.py            │  FastAPI
-                    │   /api/search · facets  │
-                    └────────────┬────────────┘
-                                 ▼
-                    ┌─────────────────────────┐
-                    │   web/index.html        │  Tailwind + vanilla JS
-                    └─────────────────────────┘
+              ┌──────────────────┴──────────────────┐
+              ▼                                     ▼
+    ┌──────────────────┐                  ┌──────────────────┐
+    │ Variante FastAPI │                  │ Variante statique│
+    │ api/app.py       │                  │ scripts/build.mjs│
+    │ /api/search …    │                  │ → dist/pagefind/ │
+    └────────┬─────────┘                  └────────┬─────────┘
+             ▼                                     ▼
+    ┌──────────────────┐                  ┌──────────────────┐
+    │ web/common.js    │  partagé →       │ web/common.js    │
+    │ + backends/fast… │                  │ + backends/page… │
+    └──────────────────┘                  └──────────────────┘
 ```
 
 | Composant | Pile | Pourquoi |
 |---|---|---|
 | Moissonneur | Python + `requests` + Playwright | OAI-PMH partout sauf McGill (WAF Azure → vraie session navigateur) |
-| Index | SQLite **FTS5** | Aucun service externe ; sub-50 ms pour 5 k records ; tokenizer `unicode61 remove_diacritics` |
-| Classification | Règles + Gemini 3 Flash batch | Règles couvrent les cas faciles ; LLM résout le résidu (titres opaques sans abstract) |
+| Index serveur | SQLite **FTS5** | Aucun service externe ; tokenizer `unicode61 remove_diacritics` |
+| Index statique | **Pagefind** (WASM, chunked) | ~50 KB initial, chargement à la demande, scaling à 177 k records |
+| Classification | 3-pass règles + Gemini 3 Flash batch | Auth → règles primaires → règles+abstract → LLM pour le résidu |
 | API | FastAPI | Auto-doc OpenAPI sur `/docs` |
-| UI | Tailwind CDN, vanilla JS | Aucun build, déploiement = `cp` |
+| UI | Tailwind CDN, vanilla JS, ES modules | Aucun build, `web/common.js` partagé entre les deux variantes |
 
 ---
 
@@ -131,20 +141,20 @@ explorer immédiatement, sans dépendre de la disponibilité des serveurs OAI.
 
 ## Build statique pour GitHub Pages
 
-Une seconde version 100 % statique est générée à chaque push : **MiniSearch**
-construit un index plein-texte BM25 *à la compilation*, le navigateur le
-charge en une seule requête (~3 Mo gzippé) puis fait toute la recherche +
-les facettes en RAM. **Sub-10 ms par requête, sans serveur, hébergement
-gratuit sur GitHub Pages.**
+Une seconde version 100 % statique est générée à chaque push : **Pagefind**
+découpe l'index plein-texte en chunks WASM *à la compilation* ; le navigateur
+ne charge que ~50 KB initial puis fetch à la demande les chunks qui
+correspondent à la requête (typ. 100–300 KB par session). **Recherche locale,
+sans serveur, hébergement gratuit sur GitHub Pages, scaling à 177 k records.**
 
 ```bash
 # Installer Node 20+ et les deps
 npm install
 
-# Builder dist/ (lit data/theses.db, produit dist/{index.html,search.json,meta.json})
+# Builder dist/ (lit data/theses.db, produit dist/{index.html,pagefind/,meta.json})
 npm run build
 
-# Servir localement (http://localhost:5000) avec gzip on-the-fly
+# Servir localement (http://localhost:5000)
 npm run serve
 ```
 
@@ -159,11 +169,11 @@ site est à jour automatiquement.
 |---|---|---|
 | Hébergement | VPS / PaaS | GitHub Pages (gratuit, CDN) |
 | Coût mensuel | 0 – 5 $ | 0 $ |
-| Recherche | SQLite FTS5 (server) | MiniSearch BM25 (browser) |
-| Latence requête | 10–50 ms (HTTP + SQL) | 1–10 ms (RAM) |
-| Premier chargement | < 1 s | ~3 MB d'index (caché ensuite) |
+| Recherche | SQLite FTS5 (server) | Pagefind (WASM chunks, browser) |
+| Latence requête | 10–50 ms (HTTP + SQL) | 30–80 ms (premier fetch chunk) |
+| Premier chargement | < 1 s | ~50 KB index entry (chunks à la demande) |
 | Maintenance | Service à surveiller | Aucune |
-| Re-utilisation des données | API JSON | `search.json` ouvert |
+| Re-utilisation des données | API JSON | `pagefind/` + `meta.json` ouverts |
 
 ---
 
@@ -264,11 +274,16 @@ theses-quebec/
 │   ├── llm_classify.py       Classificateur Gemini 3 Flash batch
 │   └── db.py                 Schéma SQLite + FTS5 + triggers
 ├── web/
+│   ├── common.js             UI partagée (search loop, facettes, modal, citations)
+│   ├── backends/
+│   │   ├── fastapi.js        Adapter pour /api/search
+│   │   └── pagefind.js       Adapter pour le bundle Pagefind
 │   ├── index.html            Frontend pour la version FastAPI
 │   └── static.html           Frontend pour la version statique (Pages)
 ├── scripts/
-│   ├── build.mjs             SQLite → MiniSearch index → dist/
+│   ├── build.mjs             SQLite → Pagefind chunks → dist/
 │   └── serve.mjs             Serveur local de prévisualisation
+├── tests/                    Suite pytest (75+ tests : classify, normalize, parsers, db)
 ├── data/
 │   └── theses.db             Base SQLite pré-moissonnée (LFS)
 ├── .env.example              Template pour les secrets
@@ -315,8 +330,8 @@ Trois voies typiques, par ordre croissant de complexité :
 
 ## Statut & limites
 
-- **Prototype**. Code volontairement compact, pas de tests automatisés à
-  ce stade.
+- **Suite pytest** (75+ tests autour de `classify`, `normalize`, `parsers`,
+  `db`). Smoke-test classifier exécuté en CI à chaque push.
 - **2 dépôts intermittents** (UQAM, TÉLUQ) — leurs serveurs OAI ne répondent
   pas toujours. Le harvester est résilient (retry + skip).
 - **Métadonnées datées** — la dernière passe est figée dans `data/theses.db`.
@@ -337,9 +352,9 @@ Les contributions sont les bienvenues, surtout :
   n'expose pas OAI-PMH, suis le patron de `mcgill_harvest.py`.
 - **Mots-clés disciplinaires** : `harvester/classify.py` est trivial à
   étendre. Voir le commentaire en tête du fichier.
-- **UI** : `web/index.html` est self-contained. Pas de build.
-- **Tests** : un suite minimale autour de `normalize.py` et `classify.py`
-  serait bienvenue.
+- **UI** : `web/common.js` est partagé entre les deux variantes. Modifie-le
+  pour faire évoluer les deux d'un coup. Aucun build.
+- **Tests** : `python3 -m pytest tests/ -q` (Python 3.11+).
 
 Workflow standard :
 
