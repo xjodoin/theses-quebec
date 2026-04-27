@@ -740,4 +740,66 @@ export async function bootstrap(backend, options = {}) {
   if ($("#q").disabled) $("#q").disabled = false;
   syncFormFromState();
   await runSearch();
+
+  // ------------------------------------------------------- update banner --
+  // The static site rebuilds whenever data/theses.db is updated. Long-lived
+  // tabs would otherwise keep the boot-time index forever. Poll meta.json on
+  // tab focus + every 15 min, compare built_at, surface a 1-click reload.
+  // Skipped on the FastAPI variant (builtAt: null) — the API is always live.
+  if (init.builtAt) startUpdateWatcher(init.builtAt);
+}
+
+/** Watch for a newer build and show a reload banner when one ships. */
+function startUpdateWatcher(bootBuiltAt) {
+  let banner = null;
+  let stopped = false;
+
+  async function check() {
+    if (stopped) return;
+    try {
+      // Cache-bust with the boot version: a stale CDN copy keyed on the same
+      // built_at is fine, but we want to see the new one as soon as the build
+      // pushes a different built_at value.
+      const r = await fetch(`./meta.json?v=${encodeURIComponent(bootBuiltAt)}&t=${Date.now()}`,
+        { cache: "no-store" });
+      if (!r.ok) return;
+      const m = await r.json();
+      if (m.built_at && m.built_at !== bootBuiltAt) showBanner(m.built_at);
+    } catch { /* offline / network blip — try again next tick */ }
+  }
+
+  function showBanner(newBuiltAt) {
+    if (banner) return;   // already visible
+    stopped = true;
+    banner = document.createElement("div");
+    banner.id = "update-banner";
+    banner.setAttribute("role", "status");
+    banner.className = "fixed top-0 inset-x-0 z-50 bg-accent-500 text-white text-sm shadow-md";
+    const niceDate = (() => {
+      try { return new Date(newBuiltAt).toLocaleDateString("fr-CA", { day: "numeric", month: "long" }); }
+      catch { return ""; }
+    })();
+    banner.innerHTML = `
+      <div class="max-w-screen-2xl mx-auto px-4 py-2 flex items-center justify-center gap-3 flex-wrap">
+        <span>Une nouvelle version de l'index${niceDate ? ` (${niceDate})` : ""} est disponible.</span>
+        <button data-reload class="font-semibold underline underline-offset-2 hover:no-underline">Actualiser →</button>
+        <button data-dismiss aria-label="Fermer" class="ml-1 opacity-70 hover:opacity-100 text-base leading-none">×</button>
+      </div>`;
+    banner.querySelector("[data-reload]").addEventListener("click", () => location.reload());
+    banner.querySelector("[data-dismiss]").addEventListener("click", () => {
+      banner.remove(); banner = null;
+      // Don't restart the watcher — once dismissed, leave the user alone for
+      // this session. They'll see it again on the next tab they open.
+    });
+    document.body.appendChild(banner);
+  }
+
+  // Poll on tab focus (the common case: laptop wakes after a week) and every
+  // 15 min while active. Initial check after 30s so we don't compete with
+  // the first search.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") check();
+  });
+  setTimeout(check, 30_000);
+  setInterval(check, 15 * 60_000);
 }
