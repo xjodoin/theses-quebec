@@ -32,6 +32,7 @@ DCTERMS_NS   = "http://purl.org/dc/terms/"
 OAI_DC_NS    = "http://www.openarchives.org/OAI/2.0/oai_dc/"
 DIM_NS       = "http://www.dspace.org/xmlns/dspace/dim"
 ETDMS_10_NS  = "http://www.ndltd.org/standards/metadata/etdms/1.0/"
+ETDMS_10_NS_DASH = "http://www.ndltd.org/standards/metadata/etdms/1-0/"  # McGill (Hyrax)
 ETDMS_11_NS  = "http://www.ndltd.org/standards/metadata/etdms/1.1/"
 
 
@@ -152,7 +153,7 @@ def parse_oai_etdms(record):
 
     thesis = None
     ns = None
-    for candidate in (ETDMS_10_NS, ETDMS_11_NS):
+    for candidate in (ETDMS_10_NS, ETDMS_10_NS_DASH, ETDMS_11_NS):
         thesis = metadata.find(f"{{{candidate}}}thesis")
         if thesis is not None:
             ns = candidate

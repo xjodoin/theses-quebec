@@ -145,10 +145,9 @@ def normalize_record(payload: dict, source: dict) -> Optional[dict]:
     if not dc:
         return None
 
-    # If the source exposed an authoritative discipline (e.g. DSpace's
-    # qualified `subject@discipline`, ETDMS's `degree.discipline`), inject
-    # it into the subject list so the classifier sees it as a high-signal
-    # match. We prepend so it wins lexically when multiple subjects compete.
+    # Authoritative discipline from the source (e.g. DSpace's qualified
+    # `subject@discipline`, ETDMS's `degree.discipline`). Stored as its own
+    # column AND prepended to subjects so it surfaces in search results.
     auth_disc = (payload.get("authoritative_discipline") or "").strip()
     if auth_disc:
         existing = dc.get("subject") or []
@@ -176,5 +175,6 @@ def normalize_record(payload: dict, source: dict) -> Optional[dict]:
         "language": _first(dc.get("language")),
         "publisher": _first(dc.get("publisher")),
         "url": _pick_url(dc, payload["oai_identifier"]),
+        "authoritative_discipline": auth_disc or None,
         "datestamp": payload.get("datestamp", ""),
     }

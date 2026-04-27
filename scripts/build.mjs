@@ -46,11 +46,17 @@ function tokenize(text) {
     .filter((t) => t.length >= 2);
 }
 
+// At ~120k records, indexing the abstract balloons the inverted index past
+// what's reasonable to ship over the wire (it's responsible for ~half of
+// search.json size). Title + authors + subjects covers the vast majority of
+// useful matches; the abstract is still stored for display and visible in
+// the detail modal. Server-side FTS5 (the FastAPI variant) keeps the full
+// abstract index for users who self-host.
 const MINISEARCH_OPTIONS = {
-  fields: ["title", "authors", "abstract", "subjects"],
+  fields: ["title", "authors", "subjects"],
   storeFields: STORE_FIELDS,
   tokenize,
-  processTerm: (term) => term, // tokenize already lowercased + stripped
+  processTerm: (term) => term,
 };
 
 // ----------------------------------------------------------- pipeline --
@@ -70,13 +76,15 @@ const rows = db
 db.close();
 console.log(`  ${rows.length.toLocaleString()} records loaded`);
 
-// Trim long abstracts: 1000 chars is plenty for both the on-card preview and
-// keyword-bearing context in the index. Past that, every record adds bytes
-// without improving recall.
+// Trim abstracts hard. With ~120k records the inverted index dominates,
+// but stored abstract text is 70%+ of the bundle. 300 chars covers the
+// thesis-card preview and the most distinctive opening keywords; users
+// click through to the source for the full text.
+const ABSTRACT_LIMIT = 300;
 let trimmed = 0;
 for (const r of rows) {
-  if (r.abstract && r.abstract.length > 1000) {
-    r.abstract = r.abstract.slice(0, 1000) + "…";
+  if (r.abstract && r.abstract.length > ABSTRACT_LIMIT) {
+    r.abstract = r.abstract.slice(0, ABSTRACT_LIMIT) + "…";
     trimmed++;
   }
   // Drop empty/null fields to shrink the JSON. The frontend handles missing keys.

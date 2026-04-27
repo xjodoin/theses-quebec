@@ -32,8 +32,9 @@ CREATE TABLE IF NOT EXISTS theses (
     language       TEXT,
     publisher      TEXT,
     url            TEXT,
-    discipline        TEXT,
-    discipline_source TEXT NOT NULL DEFAULT 'rule',  -- 'rule' | 'llm' | 'manual'
+    discipline              TEXT,
+    discipline_source       TEXT NOT NULL DEFAULT 'rule',  -- 'rule' | 'llm' | 'manual'
+    authoritative_discipline TEXT,  -- raw source-curated discipline label, e.g. "Computer Science", "Génie civil"
     datestamp      TEXT,
     harvested_at   TEXT DEFAULT (datetime('now'))
 );
@@ -101,6 +102,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "AND discipline != 'Autre / non classé'"
         )
         conn.commit()
+    if "authoritative_discipline" not in cols:
+        conn.execute(
+            "ALTER TABLE theses ADD COLUMN authoritative_discipline TEXT"
+        )
+        conn.commit()
 
 
 def connect(db_path: str) -> sqlite3.Connection:
@@ -114,38 +120,51 @@ def connect(db_path: str) -> sqlite3.Connection:
     return conn
 
 
+_PRESERVE_SOURCES = ("'llm'", "'manual'")
+
+
 def upsert_thesis(conn: sqlite3.Connection, row: dict) -> None:
     """INSERT a new record or UPDATE an existing one.
 
-    `discipline_source` defaults to 'rule' for new inserts (the harvester
-    re-runs `classify_discipline` on every record, producing a rule-based
-    label). On UPDATE, the discipline is overwritten ONLY if the existing
-    `discipline_source` is 'rule'; 'llm' and 'manual' are preserved so a
-    re-harvest doesn't lose a curated classification.
+    `discipline_source` reflects WHICH pass of the classifier produced
+    the label:
+      - 'auth'          — Pass 0 (source-curated authoritative discipline)
+      - 'rule'          — Pass 1 (title + subjects + publisher)
+      - 'rule_abstract' — Pass 2 (abstract fallback)
+      - 'llm'           — Gemini batch
+      - 'manual'        — human override
+
+    On UPDATE, the discipline is overwritten EXCEPT when the existing
+    `discipline_source` is 'llm' or 'manual'. The 'rule*' / 'auth' values
+    are all considered re-derivable, so a re-harvest with improved rules
+    correctly updates them.
     """
     cols = ("oai_identifier", "source_id", "source_name", "title", "authors",
             "abstract", "subjects", "year", "type", "language", "publisher",
-            "url", "discipline", "datestamp")
+            "url", "discipline", "authoritative_discipline", "datestamp")
     placeholders = ", ".join(["?"] * len(cols))
-    # Update every field but discipline/discipline_source unconditionally.
+    # The classifier pass tag, defaulting to 'rule' for callers that haven't
+    # adopted the detailed classifier yet.
+    new_source = row.get("discipline_source", "rule")
     standard_updates = ", ".join(
         f"{c}=excluded.{c}"
         for c in cols
         if c not in ("oai_identifier", "discipline")
     )
+    preserve = ", ".join(_PRESERVE_SOURCES)
     sql = (
         f"INSERT INTO theses ({', '.join(cols)}, discipline_source) "
-        f"VALUES ({placeholders}, 'rule') "
+        f"VALUES ({placeholders}, ?) "
         f"ON CONFLICT(oai_identifier) DO UPDATE SET "
         f"{standard_updates}, "
-        f"discipline = CASE WHEN theses.discipline_source IN ('llm', 'manual') "
+        f"discipline = CASE WHEN theses.discipline_source IN ({preserve}) "
         f"                  THEN theses.discipline "
         f"                  ELSE excluded.discipline END, "
-        f"discipline_source = CASE WHEN theses.discipline_source IN ('llm', 'manual') "
+        f"discipline_source = CASE WHEN theses.discipline_source IN ({preserve}) "
         f"                          THEN theses.discipline_source "
-        f"                          ELSE 'rule' END"
+        f"                          ELSE excluded.discipline_source END"
     )
-    conn.execute(sql, tuple(row.get(c) for c in cols))
+    conn.execute(sql, tuple(row.get(c) for c in cols) + (new_source,))
 
 
 def delete_thesis(conn: sqlite3.Connection, oai_identifier: str) -> int:
