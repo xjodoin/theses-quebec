@@ -145,6 +145,16 @@ def normalize_record(payload: dict, source: dict) -> Optional[dict]:
     if not dc:
         return None
 
+    # If the source exposed an authoritative discipline (e.g. DSpace's
+    # qualified `subject@discipline`, ETDMS's `degree.discipline`), inject
+    # it into the subject list so the classifier sees it as a high-signal
+    # match. We prepend so it wins lexically when multiple subjects compete.
+    auth_disc = (payload.get("authoritative_discipline") or "").strip()
+    if auth_disc:
+        existing = dc.get("subject") or []
+        if auth_disc not in existing:
+            dc["subject"] = [auth_disc] + existing
+
     thesis_type = _classify_type(dc)
     if thesis_type is None:
         return None  # not a thesis — skip

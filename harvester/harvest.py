@@ -19,6 +19,7 @@ import yaml
 
 from normalize import normalize_record
 from classify import classify_discipline
+from parsers import parse_record
 from db import (
     connect, upsert_thesis, delete_thesis,
     get_harvest_from, set_harvest_state,
@@ -102,42 +103,12 @@ def iter_records(base_url: str, metadata_prefix: str = "oai_dc",
         time.sleep(0.5)  # be polite
 
 
-def record_to_dict(record: ET.Element) -> dict:
-    """Pull header + Dublin Core fields out of an OAI record element.
-
-    Returns a dict with key `_deleted: True` for tombstones (records the source
-    has marked deleted via `<header status="deleted">`). The caller deletes
-    them from the DB. Returns `{}` for malformed records that should be
-    skipped silently.
+def record_to_dict(record: ET.Element, metadata_prefix: str = "oai_dc") -> dict:
+    """Dispatch to the right per-format parser. Same return shape as before;
+    additionally may include `authoritative_discipline` when the source
+    exposes a qualified discipline / department field.
     """
-    header = record.find("oai:header", NS)
-    if header is None:
-        return {}
-
-    identifier = header.findtext("oai:identifier", default="", namespaces=NS).strip()
-
-    if header.get("status") == "deleted":
-        return {"_deleted": True, "oai_identifier": identifier}
-
-    datestamp = header.findtext("oai:datestamp", default="", namespaces=NS).strip()
-
-    dc_root = record.find("oai:metadata/oai_dc:dc", NS)
-    if dc_root is None:
-        return {}
-
-    fields: dict[str, list[str]] = {}
-    for child in dc_root:
-        # tag is like '{http://purl.org/dc/elements/1.1/}title'
-        tag = child.tag.split("}", 1)[-1]
-        text = (child.text or "").strip()
-        if text:
-            fields.setdefault(tag, []).append(text)
-
-    return {
-        "oai_identifier": identifier,
-        "datestamp": datestamp,
-        "dc": fields,
-    }
+    return parse_record(record, metadata_prefix)
 
 
 def ingest_record(raw: ET.Element, source: dict, conn: sqlite3.Connection) -> str:
@@ -145,7 +116,8 @@ def ingest_record(raw: ET.Element, source: dict, conn: sqlite3.Connection) -> st
 
     Raises on parse errors so callers can count them.
     """
-    payload = record_to_dict(raw)
+    prefix = source.get("metadata_prefix", "oai_dc")
+    payload = record_to_dict(raw, prefix)
     if not payload:
         return "skipped"
     if payload.get("_deleted"):
@@ -183,6 +155,7 @@ def harvest_source(source: dict, conn: sqlite3.Connection,
 
     iterator = (record_iter(source, max_records, from_date) if record_iter
                 else iter_records(source["base_url"],
+                                  metadata_prefix=source.get("metadata_prefix", "oai_dc"),
                                   set_spec=source.get("set"),
                                   from_date=from_date,
                                   max_records=max_records))

@@ -1,100 +1,125 @@
 # Quebec institutional repositories — all speak OAI-PMH 2.0.
-# We harvest oai_dc and filter by dc:type=Thesis on ingest.
 #
-# Two platforms dominate Quebec:
-#   - EPrints: /cgi/oai2  (UQAM, UQTR, UQAC, UQAR, UQO, UQAT, INRS, ÉTS, R-Libre, Concordia)
-#   - DSpace 7 / Scholaris: /server/oai/request  (UdeM, Bishop's, Sherbrooke)
+# `metadata_prefix` defaults to `oai_dc`. We use richer prefixes when the
+# source exposes a qualified discipline / department field that's lost in
+# basic Dublin Core. See `docs/source_metadata_audit.md` for the full
+# inventory of what each source carries.
+#
+# Mapping rationale
+#   - DSpace (bishops, udem, usherbrooke, laval): `dim` preserves the
+#     qualified `dc:subject@discipline` and `*:degree.discipline` fields
+#   - Some EPrints expose `oai_etdms` with explicit `etdms:discipline`
+#     (concordia, uqtr, rlibre, polymtl)
+#   - Other EPrints expose `uketd_dc` with `uketdterms:department`
+#     (uqam, uqac, uqar, uqo, uqat, inrs)
+#   - ÉTS exposes neither — stays on `oai_dc`
 
 - id: concordia
   name: Concordia University (Spectrum)
   short: Concordia
   platform: eprints
   base_url: https://spectrum.library.concordia.ca/cgi/oai2
+  metadata_prefix: oai_etdms
 
 - id: udem
   name: Université de Montréal (Papyrus)
   short: UdeM
   platform: dspace
   base_url: https://umontreal.scholaris.ca/server/oai/request
+  metadata_prefix: dim
 
 - id: usherbrooke
   name: Université de Sherbrooke (Savoirs UdeS)
   short: Sherbrooke
   platform: dspace
   base_url: https://usherbrooke.scholaris.ca/server/oai/request
+  metadata_prefix: dim
 
 - id: bishops
   name: Bishop's University (IRis)
   short: Bishop's
   platform: dspace
   base_url: https://ubishops.scholaris.ca/server/oai/request
+  metadata_prefix: dim
 
 - id: uqam
   name: UQAM (Archipel)
   short: UQAM
   platform: eprints
   base_url: https://archipel.uqam.ca/cgi/oai2
+  metadata_prefix: uketd_dc
 
 - id: uqtr
   name: UQTR (Cognitio)
   short: UQTR
   platform: eprints
   base_url: https://depot-e.uqtr.ca/cgi/oai2
+  metadata_prefix: oai_etdms
 
 - id: uqac
   name: UQAC (Constellation)
   short: UQAC
   platform: eprints
   base_url: https://constellation.uqac.ca/cgi/oai2
+  metadata_prefix: uketd_dc
 
 - id: uqar
   name: UQAR (Sémaphore)
   short: UQAR
   platform: eprints
   base_url: https://semaphore.uqar.ca/cgi/oai2
+  metadata_prefix: uketd_dc
 
 - id: uqo
   name: UQO (Dépôt institutionnel)
   short: UQO
   platform: eprints
   base_url: https://di.uqo.ca/cgi/oai2
+  metadata_prefix: uketd_dc
 
 - id: uqat
   name: UQAT (Depositum)
   short: UQAT
   platform: eprints
   base_url: https://depositum.uqat.ca/cgi/oai2
+  metadata_prefix: uketd_dc
 
 - id: inrs
   name: INRS (EspaceINRS)
   short: INRS
   platform: eprints
   base_url: https://espace.inrs.ca/cgi/oai2
+  metadata_prefix: uketd_dc
 
 - id: ets
   name: ÉTS (Espace ETS)
   short: ÉTS
   platform: eprints
   base_url: https://espace.etsmtl.ca/cgi/oai2
+  metadata_prefix: oai_dc
 
 - id: rlibre
   name: TÉLUQ (R-Libre)
   short: TÉLUQ
   platform: eprints
   base_url: https://r-libre.teluq.ca/cgi/oai2
+  metadata_prefix: oai_etdms
 
 - id: polymtl
   name: Polytechnique Montréal (PolyPublie)
   short: Polytechnique
   platform: eprints
   base_url: https://publications.polymtl.ca/cgi/oai2
-  set: 74797065733D746865736973   # « Type = Mémoire ou thèse » (hex of types=thesis)
+  metadata_prefix: oai_etdms
+  # Polymtl's `set` filter (hex-encoded EPrints style) doesn't apply with
+  # `oai_etdms`, but the etdms feed is already thesis-only — no set needed.
 
 - id: laval
   name: Université Laval (Corpus UL)
   short: Laval
   platform: dspace
   base_url: https://corpus.ulaval.ca/oai/request
+  metadata_prefix: dim
   set: col_20.500.11794_17461   # collection « Thèses et mémoires »
 
 # TODO: Érudit OAI investigation results (roadmap 2.3)
@@ -114,7 +139,7 @@
 #         that already live in their home repositories (Papyrus, Savoirs UdeS,
 #         Archipel, etc.) — those are already harvested directly by us.
 #       * Conclusion: adding the OAI feed would harvest ~0 theses (or duplicate
-#         what we already have via the home repos). Not added on purpose.
+#             what we already have via the home repos). Not added on purpose.
 #   - Possible alternative: api.erudit.org/v1 (REST API) — would need a custom
 #     harvester and per-thesis fetches; only worth doing if a future audit shows
 #     theses Érudit hosts that are NOT in any of the 14 OAI sources we already
