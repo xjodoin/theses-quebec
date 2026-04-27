@@ -111,19 +111,61 @@ def record_to_dict(record: ET.Element, metadata_prefix: str = "oai_dc") -> dict:
     return parse_record(record, metadata_prefix)
 
 
-def ingest_record(raw: ET.Element, source: dict, conn: sqlite3.Connection) -> str:
-    """Ingest one OAI <record>. Returns 'kept' | 'skipped' | 'deleted'.
+def _fetch_oai_dc_record(session, base_url: str, oai_id: str, user_agent: str):
+    """Fetch a single OAI record by identifier using the basic oai_dc prefix.
+    Used as a fallback when a richer prefix returns an empty payload (some
+    EPrints servers — UQAM in particular — only emit `uketd_dc` for records
+    that have specific qualified fields populated; older records come back
+    as <uketd_dc:uketddc/> with no children even though `oai_dc` has full
+    metadata). Returns the parsed payload dict, or {} on failure.
+    """
+    try:
+        resp = session.get(base_url,
+                           params={"verb": "GetRecord", "identifier": oai_id,
+                                   "metadataPrefix": "oai_dc"},
+                           headers={"User-Agent": user_agent},
+                           timeout=60)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+        record = root.find(".//oai:record", NS)
+        if record is None:
+            return {}
+        return record_to_dict(record, "oai_dc")
+    except Exception:
+        return {}
+
+
+def ingest_record(raw: ET.Element, source: dict, conn: sqlite3.Connection,
+                  session=None, user_agent: str = "") -> str:
+    """Ingest one OAI <record>. Returns 'kept' | 'skipped' | 'deleted' | 'fallback'.
+
+    'fallback' is identical to 'kept' but indicates the rich prefix returned
+    an empty payload and we recovered the record via oai_dc.
 
     Raises on parse errors so callers can count them.
     """
     prefix = source.get("metadata_prefix", "oai_dc")
     payload = record_to_dict(raw, prefix)
-    if not payload:
-        return "skipped"
     if payload.get("_deleted"):
         if payload.get("oai_identifier"):
             delete_thesis(conn, payload["oai_identifier"])
         return "deleted"
+
+    used_fallback = False
+    if (not payload or not payload.get("dc")) \
+            and prefix != "oai_dc" \
+            and session is not None \
+            and payload.get("oai_identifier"):
+        # Re-fetch this single record with oai_dc; preserves coverage when
+        # the source's richer prefix has gaps (see _fetch_oai_dc_record).
+        fallback_payload = _fetch_oai_dc_record(
+            session, source["base_url"], payload["oai_identifier"], user_agent)
+        if fallback_payload and fallback_payload.get("dc"):
+            payload = fallback_payload
+            used_fallback = True
+
+    if not payload or not payload.get("dc"):
+        return "skipped"
     normalized = normalize_record(payload, source)
     if not normalized:
         return "skipped"
@@ -131,7 +173,7 @@ def ingest_record(raw: ET.Element, source: dict, conn: sqlite3.Connection) -> st
     normalized["discipline"] = disc
     normalized["discipline_source"] = source_tag if source_tag != "none" else "rule"
     upsert_thesis(conn, normalized)
-    return "kept"
+    return "fallback" if used_fallback else "kept"
 
 
 def harvest_source(source: dict, conn: sqlite3.Connection,
@@ -148,12 +190,18 @@ def harvest_source(source: dict, conn: sqlite3.Connection,
     that overrides the default HTTP fetcher (used by the Playwright-based
     McGill harvester to bypass Azure WAF).
     """
-    stats = {"seen": 0, "kept": 0, "skipped": 0, "deleted": 0, "errors": 0}
+    stats = {"seen": 0, "kept": 0, "skipped": 0, "deleted": 0,
+             "fallback": 0, "errors": 0}
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     from_date = None if full else get_harvest_from(conn, source["id"])
 
     note = f" (incremental from {from_date})" if from_date else " (full)"
     print(f"\n=== {source['name']} ({source['base_url']}){note} ===", flush=True)
+
+    # Reusable session for both ListRecords iteration and the per-record
+    # oai_dc fallback inside ingest_record.
+    session = requests.Session()
+    session.headers["User-Agent"] = DEFAULT_UA
 
     iterator = (record_iter(source, max_records, from_date) if record_iter
                 else iter_records(source["base_url"],
@@ -165,8 +213,15 @@ def harvest_source(source: dict, conn: sqlite3.Connection,
         for raw in iterator:
             stats["seen"] += 1
             try:
-                outcome = ingest_record(raw, source, conn)
-                stats[outcome] += 1
+                outcome = ingest_record(raw, source, conn,
+                                        session=session, user_agent=DEFAULT_UA)
+                # Treat 'fallback' as 'kept' for the running progress meter
+                # but track it separately in the per-source summary.
+                if outcome == "fallback":
+                    stats["kept"] += 1
+                    stats["fallback"] += 1
+                else:
+                    stats[outcome] += 1
                 if stats["kept"] and stats["kept"] % 100 == 0:
                     conn.commit()
                     print(f"  ... kept {stats['kept']} / seen {stats['seen']}", flush=True)
@@ -192,7 +247,7 @@ def harvest_source(source: dict, conn: sqlite3.Connection,
 
     print(f"  done: seen={stats['seen']} kept={stats['kept']} "
           f"skipped={stats['skipped']} deleted={stats['deleted']} "
-          f"errors={stats['errors']}", flush=True)
+          f"fallback={stats['fallback']} errors={stats['errors']}", flush=True)
     return stats
 
 
@@ -215,7 +270,8 @@ def main() -> int:
             return 2
 
     conn = connect(args.db)
-    totals = {"seen": 0, "kept": 0, "skipped": 0, "deleted": 0, "errors": 0}
+    totals = {"seen": 0, "kept": 0, "skipped": 0, "deleted": 0,
+              "fallback": 0, "errors": 0}
     for source in sources:
         stats = harvest_source(source, conn,
                                max_records=args.max_per_source,
@@ -225,7 +281,7 @@ def main() -> int:
 
     print(f"\n=== TOTAL === seen={totals['seen']} kept={totals['kept']} "
           f"skipped={totals['skipped']} deleted={totals['deleted']} "
-          f"errors={totals['errors']}")
+          f"fallback={totals['fallback']} errors={totals['errors']}")
     return 0
 
 
