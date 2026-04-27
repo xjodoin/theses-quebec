@@ -31,16 +31,63 @@ const TYPE_STYLES = {
   memoire: { label: "Mémoire", cls: "bg-sky-100 dark:bg-sky-900/40 text-sky-800 dark:text-sky-200" },
 };
 
+/** Strip combining marks + lowercase, building a map from each stripped-text
+ *  index back to the index of the corresponding character in `text`. Used by
+ *  highlight() so we can match against the diacritic-folded form (what the
+ *  search engine indexes) and wrap <mark> around the original (accented)
+ *  characters in the displayed string.
+ */
+function stripWithMap(text) {
+  let stripped = "";
+  const map = [];                  // stripped[i] ↔ text[map[i]]
+  for (let i = 0; i < text.length; i++) {
+    const nfd = text[i].normalize("NFD");
+    let core = "";
+    for (const c of nfd) {
+      if (!/[̀-ͯ]/.test(c)) core += c.toLowerCase();
+    }
+    for (const c of core) { stripped += c; map.push(i); }
+  }
+  return { stripped, map };
+}
+
+const _escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 function highlight(text, q) {
   if (!text) return "";
   const safe = escapeHTML(text);
   if (!q) return safe;
+
   const tokens = q.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
     .split(/\s+/).filter(t => t.length >= 2);
   if (!tokens.length) return safe;
-  const re = new RegExp("(" + tokens.map(t =>
-    t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "giu");
-  return safe.replace(re, "<mark>$1</mark>");
+
+  const { stripped, map } = stripWithMap(text);
+  const re = new RegExp(tokens.map(_escapeRe).join("|"), "g");
+
+  // Collect [start, end) ranges in the *original* (un-stripped) text.
+  const ranges = [];
+  let m;
+  while ((m = re.exec(stripped)) !== null) {
+    if (m[0].length === 0) { re.lastIndex++; continue; }   // safety
+    const s = m.index;
+    const e = s + m[0].length;
+    if (e > map.length) break;
+    ranges.push({ start: map[s], end: map[e - 1] + 1 });
+  }
+  if (!ranges.length) return safe;
+
+  // Stitch the output: alternating plain + <mark>…</mark> from the original.
+  let out = "";
+  let pos = 0;
+  for (const { start, end } of ranges) {
+    if (start < pos) continue;     // skip overlapping range (regex shouldn't produce them)
+    if (start > pos) out += escapeHTML(text.slice(pos, start));
+    out += "<mark>" + escapeHTML(text.slice(start, end)) + "</mark>";
+    pos = end;
+  }
+  if (pos < text.length) out += escapeHTML(text.slice(pos));
+  return out;
 }
 
 // ----------------------------------------------------------- citations -
