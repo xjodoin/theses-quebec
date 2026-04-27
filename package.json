@@ -10,6 +10,7 @@
   },
   "devDependencies": {
     "better-sqlite3": "^11.0.0",
-    "minisearch": "^7.1.0"
+    "minisearch": "^7.1.0",
+    "pagefind": "^1.5.2"
   }
 }
