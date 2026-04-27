@@ -177,6 +177,16 @@ tailwind.config = {
     </a>
     <div class="ml-auto flex items-center gap-2 md:gap-3">
       <div class="hidden md:flex items-center gap-2 text-xs text-ink-500 dark:text-ink-400" id="totals">…</div>
+      <button id="my-searches" type="button"
+              class="relative inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-ink-600 dark:text-ink-300 hover:text-ink-900 dark:hover:text-ink-50 border border-ink-200 dark:border-ink-700 hover:border-ink-300 dark:hover:border-ink-600 rounded-md transition"
+              aria-label="Mes recherches sauvegardées et récentes"
+              aria-haspopup="true" aria-expanded="false">
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/>
+        </svg>
+        <span class="hidden sm:inline">Mes recherches</span>
+        <span data-my-count class="hidden ml-0.5 px-1.5 rounded-full bg-accent-100 dark:bg-accent-500/20 text-accent-600 dark:text-accent-300 text-[10px] font-semibold tabular-nums"></span>
+      </button>
       <a href="https://github.com/xjodoin/theses-quebec" target="_blank" rel="noopener"
          class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-ink-600 dark:text-ink-300 hover:text-ink-900 dark:hover:text-ink-50 border border-ink-200 dark:border-ink-700 hover:border-ink-300 dark:hover:border-ink-600 rounded-md transition"
          aria-label="Code source sur GitHub" title="Logiciel libre · MIT">
