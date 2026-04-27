@@ -523,7 +523,11 @@ function tokenize(text) {
     .filter(t => t.length >= 2);
 }
 const MINISEARCH_OPTIONS = {
-  fields: ["title", "authors", "abstract", "subjects"],
+  // MUST mirror scripts/build.mjs. At ~120k records the abstract index
+  // would balloon search.json past 50 MB; abstract is stored for display
+  // but not indexed. Use the FastAPI variant (with FTS5) for full-text
+  // recall on abstracts.
+  fields: ["title", "authors", "subjects"],
   storeFields: ["title", "authors", "abstract", "year", "type",
                 "source_id", "source_name", "discipline", "url"],
   tokenize,
