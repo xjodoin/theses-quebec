@@ -53,7 +53,7 @@ backport). Click sur titre ouvre le modal détail (et non la source).
 | 1.4 | **Discipline cliquable** sur les cartes — clic sur la pill → sélectionne la facette. | S | ✶✶ | ✅ `208a4bf` |
 | 1.5 | **Mode sombre** — `dark:` Tailwind + toggle dans le header. Respect `prefers-color-scheme`. | S | ✶✶ | ✅ `229ff0c` |
 | 1.6 | **Bouton « Copier le lien »** — visible quand des filtres sont actifs. URL est déjà sync, juste rendre le geste explicite. | S | ✶ | ✅ `229ff0c` |
-| 1.7 | **Surlignage diacritiques-aware** — actuellement le `<mark>` rate les variantes accentuées. Index par char-pos pour highlighter exact. | S | ✶ | ⏳ |
+| 1.7 | **Surlignage diacritiques-aware** — `<mark>` couvre maintenant les variantes accentuées (« éducation » highlighte sur query « education » et inversement). Position-mapping NFD-aware dans `common.js::highlight()`. | S | ✶ | ✅ v0.5.2 |
 
 ---
 
@@ -160,13 +160,16 @@ backport). Click sur titre ouvre le modal détail (et non la source).
 - A11y backportée automatiquement (3.2 désormais complet)
 - UX : click sur titre ouvre le modal au lieu de naviguer
 
+## v0.5.2 — livrée ✅
+- **1.7** Surlignage diacritiques-aware — `<mark>` couvre les variantes accentuées dans les deux sens
+
 ## v0.6 — proposition (qualité + données)
 1. **5.2** « Did you mean? » sur 0 résultat
 2. **5.5** Graphique temporel (distribution annuelle par discipline)
 3. **3.6** Documentation interne (`docs/` schema DB, format JSONL Gemini)
 4. **2.7** Fallback PDF text extraction pour records sans abstract
-5. **1.7** Highlight diacritiques-aware
-6. **5.6** Sauvegarder les recherches récentes (localStorage)
+5. **5.6** Sauvegarder les recherches récentes (localStorage)
+6. **3.3** i18n EN (toggle FR/EN)
 
 ## v0.7+ — propositions ouvertes
 - **2.6** Dépôts canadiens hors-Québec (rebrand `theses-canada`?)
