@@ -167,6 +167,18 @@ backport). Click sur titre ouvre le modal détail (et non la source).
 - **5.2** « Did you mean? » — Levenshtein-tolérant (1 typo / 4 chars), vocabulaire construit à partir des labels de facettes (discipline + dépôt) repliés NFD-lowercase. Suggestion cliquable injectée dans l'état vide.
 - **5.5** Graphique temporel — barres horizontales par décennie, largeur proportionnelle au max. Click toggle filtre `year_min`/`year_max`. Trié chronologiquement, `aria-pressed` + `aria-label`.
 
+## v0.6.1 — livrée ✅ (qualité des données + polish UI)
+- **Bug majeur — auteurs DSpace** : `parse_dim` projetait `dc.contributor.author` vers `contributor` au lieu de `creator`, donc 100 % des records UdeM, Laval, Sherbrooke et Bishop's avaient un champ auteur vide (40 % du corpus). Fix dans `parse_dim` + re-harvest `--full` des 4 sources DSpace : **71 307 records → 5 records sans auteur (0,0 %)**.
+- **Direction** : nouveau champ `advisors`. Parsé depuis `dc.contributor.advisor` (DIM) et `<etdms:contributor role="advisor">` (ETDMS). Surface dans la carte (`Direction : …`) et le modal (rangée labellisée), inclus dans l'index Pagefind, BibTeX `note = {Sous la direction de …}`, RIS `A2 - …`. Couverture : ~70 400 records (UdeM 99,2 %, Sherbrooke 99,9 %, Laval 97,1 %, Bishop's 82,1 %). Sources EPrints/UKETD n'exposent rien via OAI.
+- **Modal restructuré** : grille `<dl>` avec rangées `Auteur·rice / Direction / Provenance` qui se replient quand vide.
+- **Bandeau de mise à jour** : `startUpdateWatcher` dans `common.js` poll `meta.json` à `visibilitychange` + toutes les 15 min ; affiche un bandeau orange « Une nouvelle version est disponible — Actualiser » avec rechargement 1-clic, dismissable.
+- **Préséance discipline corrigée** : `manual > auth > llm > rule_abstract > rule`. L'upsert utilise maintenant un rang numérique au lieu d'une simple liste « préserve ». 1 524 records mal classés par le LLM (avant que `authoritative_discipline` existe) corrigés via `auth` + 4 473 raffinements de provenance. Cas type : *« Morphologie et cycle annuel de l'Ancolie du Canada »* — `Linguistique (llm)` → `Biologie (auth)`.
+- **Index Pagefind unifié** : `forceLanguage: "fr"` au build pour éviter le partitionnement par langue (le frontend ne chargeait que le sous-index `fr` au splash, masquant 26 420 records anglais ; le compteur d'en-tête disait 177 413 mais la recherche vide en retournait 150 993).
+- **Graphique décennies** : filtre les barres avec `n=0` pour qu'une décennie sélectionnée fasse disparaître les autres au lieu d'afficher 16 slivers à 2 %.
+- **Recherche debounced** — 200 ms → 250 ms, vidage instantané (pas de délai en effaçant), short-circuit si la requête trim-égalise l'état actuel.
+- **Polish** : suppression du clear-X natif WebKit qui chevauchait notre badge `esc` ; lien footer pointe vers `data/theses.db` (LFS) au lieu du défunt `search.json` ; footer crédite Pagefind, plus MiniSearch ; tag de version v0.1 → v0.6.
+- **Workflow Pages élargi** à `web/**` (auparavant `web/static.html` seul, donc les modifs `common.js` ne re-déployaient pas).
+
 ## v0.7 — proposition (qualité + données)
 1. **3.6** Documentation interne (`docs/` schema DB, format JSONL Gemini)
 2. **2.7** Fallback PDF text extraction pour records sans abstract
