@@ -145,9 +145,6 @@ def connect(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-_PRESERVE_SOURCES = ("'llm'", "'manual'")
-
-
 def upsert_thesis(conn: sqlite3.Connection, row: dict) -> None:
     """INSERT a new record or UPDATE an existing one.
 
@@ -159,36 +156,51 @@ def upsert_thesis(conn: sqlite3.Connection, row: dict) -> None:
       - 'llm'           — Gemini batch
       - 'manual'        — human override
 
-    On UPDATE, the discipline is overwritten EXCEPT when the existing
-    `discipline_source` is 'llm' or 'manual'. The 'rule*' / 'auth' values
-    are all considered re-derivable, so a re-harvest with improved rules
-    correctly updates them.
+    Precedence on UPDATE (best to worst, lower wins on conflict):
+      manual > auth > llm > rule_abstract > rule
+
+    A new value only replaces the existing one when its source is at
+    least as strong. Concretely:
+      - 'manual' is never overwritten by anything;
+      - 'llm' is overwritten only by 'manual' or 'auth';
+      - 'auth' / 'rule' / 'rule_abstract' are re-derivable, so any
+        new rule-classifier output replaces them.
     """
     cols = ("oai_identifier", "source_id", "source_name", "title", "authors",
             "advisors", "abstract", "subjects", "year", "type", "language",
             "publisher", "url", "discipline", "authoritative_discipline",
             "datestamp")
     placeholders = ", ".join(["?"] * len(cols))
-    # The classifier pass tag, defaulting to 'rule' for callers that haven't
-    # adopted the detailed classifier yet.
     new_source = row.get("discipline_source", "rule")
     standard_updates = ", ".join(
         f"{c}=excluded.{c}"
         for c in cols
         if c not in ("oai_identifier", "discipline")
     )
-    preserve = ", ".join(_PRESERVE_SOURCES)
+    # Numeric strength rank — used to gate the UPDATE so a weaker source
+    # never clobbers a stronger one.
+    rank_case = (
+        "CASE %s "
+        "  WHEN 'manual' THEN 4 "
+        "  WHEN 'auth' THEN 3 "
+        "  WHEN 'llm' THEN 2 "
+        "  WHEN 'rule_abstract' THEN 1 "
+        "  ELSE 0 "
+        "END"
+    )
+    cur_rank = rank_case % "theses.discipline_source"
+    new_rank = rank_case % "excluded.discipline_source"
     sql = (
         f"INSERT INTO theses ({', '.join(cols)}, discipline_source) "
         f"VALUES ({placeholders}, ?) "
         f"ON CONFLICT(oai_identifier) DO UPDATE SET "
         f"{standard_updates}, "
-        f"discipline = CASE WHEN theses.discipline_source IN ({preserve}) "
-        f"                  THEN theses.discipline "
-        f"                  ELSE excluded.discipline END, "
-        f"discipline_source = CASE WHEN theses.discipline_source IN ({preserve}) "
-        f"                          THEN theses.discipline_source "
-        f"                          ELSE excluded.discipline_source END"
+        f"discipline = CASE WHEN ({new_rank}) >= ({cur_rank}) "
+        f"                  THEN excluded.discipline "
+        f"                  ELSE theses.discipline END, "
+        f"discipline_source = CASE WHEN ({new_rank}) >= ({cur_rank}) "
+        f"                          THEN excluded.discipline_source "
+        f"                          ELSE theses.discipline_source END"
     )
     conn.execute(sql, tuple(row.get(c) for c in cols) + (new_source,))
 

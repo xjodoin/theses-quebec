@@ -9,9 +9,14 @@ records benefit without re-harvesting from sources.
 
 Update policy
 -------------
-By default, only records whose `discipline_source = 'rule'` are touched.
-Records previously classified by the LLM (`discipline_source = 'llm'`) or
-manually overridden (`'manual'`) are preserved unless `--force` is passed.
+- `manual` rows are never touched (except with `--force`).
+- `llm` rows are only overwritten when the classifier returns Pass 0
+  (`auth`). Rationale: the institution's own curated discipline string
+  is more authoritative than the LLM's guess. The LLM batch typically
+  ran before `authoritative_discipline` was populated, so many `llm`
+  rows now have a sharper signal available.
+- Other rows (`rule`, `rule_abstract`, `auth`) are re-classified
+  unconditionally — they're all re-derivable from the current rules.
 """
 from __future__ import annotations
 
@@ -41,10 +46,11 @@ def main() -> int:
     conn = sqlite3.connect(args.db)
     conn.row_factory = sqlite3.Row
 
-    # By default touch only rule-derived rows (incl. 'auth' and
-    # 'rule_abstract' — all derivable from current code). 'llm' and
-    # 'manual' stay put unless --force.
-    where = "" if args.force else "WHERE discipline_source NOT IN ('llm', 'manual')"
+    # By default skip 'manual' (human-curated, never overwrite). 'llm' rows
+    # are scanned but only updated when Pass 0 (auth) returns an answer —
+    # see the conditional inside the loop. 'rule' and 'rule_abstract' rows
+    # are re-derived unconditionally.
+    where = "" if args.force else "WHERE discipline_source != 'manual'"
     rows = list(conn.execute(
         "SELECT oai_identifier, title, subjects, abstract, publisher, "
         "       discipline, discipline_source, authoritative_discipline "
@@ -58,6 +64,7 @@ def main() -> int:
 
     other_to_specific = 0
     rule_to_rule = 0
+    llm_to_auth = 0
     transitions: Counter = Counter()
     updates: list[tuple[str, str]] = []
 
@@ -74,7 +81,17 @@ def main() -> int:
         cur = row["discipline"] or OTHER
         cur_source = row["discipline_source"]
 
-        if cur == OTHER and new != OTHER:
+        # Guard for LLM rows: only Pass 0 (auth) is allowed to overwrite them.
+        # Without this, every re-run would clobber the LLM's specialized
+        # answers with whatever the rules now match (often weaker).
+        if cur_source == "llm" and not args.force and new_source != "auth":
+            continue
+
+        if cur_source == "llm" and new_source == "auth" and cur != new:
+            llm_to_auth += 1
+            transitions[(cur, new)] += 1
+            updates.append((new, new_source, row["oai_identifier"]))
+        elif cur == OTHER and new != OTHER:
             other_to_specific += 1
             transitions[(cur, new)] += 1
             updates.append((new, new_source, row["oai_identifier"]))
@@ -94,9 +111,10 @@ def main() -> int:
             pass
 
     print(f"Scanned {len(rows):,} records "
-          f"({'all' if args.force else 'rule-only'}).")
+          f"({'all' if args.force else 'rule + llm rows'}).")
     print(f"  {other_to_specific} OTHER → specific category")
     print(f"  {rule_to_rule} reassigned between rule categories")
+    print(f"  {llm_to_auth} LLM result overridden by authoritative discipline")
     print(f"  {source_only_changes} provenance-tag refinements (e.g. rule → auth)")
     print()
     if transitions:
