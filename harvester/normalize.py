@@ -168,6 +168,7 @@ def normalize_record(payload: dict, source: dict) -> Optional[dict]:
         "source_name": source["short"],
         "title": title,
         "authors": _join(dc.get("creator")),
+        "advisors": _join(dc.get("_advisor")),
         "abstract": _first(dc.get("description")),
         "subjects": _join(dc.get("subject")),
         "year": _extract_year(dc),

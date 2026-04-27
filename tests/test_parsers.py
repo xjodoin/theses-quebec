@@ -104,19 +104,39 @@ def test_dim_handles_multiple_authors():
 
 
 def test_dim_separates_author_from_advisor():
-    """DSpace records have multiple contributor qualifiers — only `author`
-    should land in `creator`. Advisors and editors stay under `contributor`."""
+    """DSpace records split the `contributor` element by qualifier. Authors
+    go to `creator`; advisors land in their own `_advisor` field; other
+    qualifiers (editor, illustrator) are dropped."""
     rec = _wrap("""
       <dim:dim xmlns:dim="http://www.dspace.org/xmlns/dspace/dim">
         <dim:field mdschema="dc" element="title">Une thèse</dim:field>
         <dim:field mdschema="dc" element="contributor" qualifier="author">Chahine, Karim</dim:field>
         <dim:field mdschema="dc" element="contributor" qualifier="advisor">Pâquet, Martin</dim:field>
+        <dim:field mdschema="dc" element="contributor" qualifier="editor">Dropped, Editor</dim:field>
         <dim:field mdschema="dc" element="type">Mémoire de maîtrise</dim:field>
       </dim:dim>
     """)
     out = parse_record(rec, "dim")
     assert out["dc"]["creator"] == ["Chahine, Karim"]
-    assert out["dc"]["contributor"] == ["Pâquet, Martin"]
+    assert out["dc"]["_advisor"] == ["Pâquet, Martin"]
+    assert "contributor" not in out["dc"]
+
+
+def test_etdms_extracts_advisor_from_role_attr():
+    rec = _wrap("""
+      <etdms:thesis xmlns:etdms="http://www.ndltd.org/standards/metadata/etdms/1.0/">
+        <etdms:title>Une thèse</etdms:title>
+        <etdms:creator>Étudiant·e, Anonyme</etdms:creator>
+        <etdms:contributor role="advisor">Roy, Pierre</etdms:contributor>
+        <etdms:contributor role="committeeMember">Tremblay, Anne</etdms:contributor>
+        <etdms:degree>
+          <etdms:level>doctoral</etdms:level>
+        </etdms:degree>
+      </etdms:thesis>
+    """)
+    out = parse_record(rec, "oai_etdms")
+    assert out["dc"]["_advisor"] == ["Roy, Pierre"]
+    assert "contributor" not in out["dc"]
 
 
 # ---------------------------------------------------------------- etdms --

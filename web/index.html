@@ -408,8 +408,14 @@ tailwind.config = {
           <span data-discipline class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-ink-100 dark:bg-ink-700 text-ink-700 dark:text-ink-200"></span>
         </div>
         <h2 id="detail-title" data-title class="font-serif text-2xl font-semibold leading-snug text-ink-900 dark:text-ink-50"></h2>
-        <p data-authors class="text-sm text-ink-600 dark:text-ink-300"></p>
-        <p data-meta class="text-xs text-ink-500 dark:text-ink-400"></p>
+        <dl class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-sm">
+          <dt class="text-xs font-medium uppercase tracking-wider text-ink-400 dark:text-ink-500 pt-0.5">Auteur·rice</dt>
+          <dd data-authors class="text-ink-700 dark:text-ink-100"></dd>
+          <dt data-advisors-label class="hidden text-xs font-medium uppercase tracking-wider text-ink-400 dark:text-ink-500 pt-0.5">Direction</dt>
+          <dd data-advisors class="hidden text-ink-700 dark:text-ink-100"></dd>
+          <dt class="text-xs font-medium uppercase tracking-wider text-ink-400 dark:text-ink-500 pt-0.5">Provenance</dt>
+          <dd data-meta class="text-ink-700 dark:text-ink-100"></dd>
+        </dl>
         <p data-abstract class="text-sm text-ink-700 dark:text-ink-200 leading-relaxed whitespace-pre-line"></p>
         <div>
           <a data-source-url target="_blank" rel="noopener"
@@ -455,6 +461,7 @@ tailwind.config = {
           </a>
         </h3>
         <p data-authors class="text-sm text-ink-600 dark:text-ink-300 mt-1"></p>
+        <p data-advisors class="hidden text-xs text-ink-500 dark:text-ink-400 mt-0.5"></p>
         <p data-abstract class="text-sm text-ink-700 dark:text-ink-200 mt-2 clamp-3"></p>
       </div>
       <div class="hidden sm:flex flex-col items-end shrink-0 text-right text-xs">

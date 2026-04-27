@@ -119,12 +119,16 @@ def parse_dim(record):
 
         # Project to DC-equivalent shape downstream code expects.
         if schema == "dc":
-            # DSpace emits authors as `dc.contributor.author` rather than
-            # `dc.creator`. Map them onto `creator` so normalize._join picks
-            # them up; other contributor qualifiers (advisor, editor) stay
-            # under `contributor` and are not currently surfaced.
-            if element == "contributor" and qualifier == "author":
-                _add(fields, "creator", text)
+            # DSpace splits the `contributor` element by qualifier:
+            #   author    → dc.creator       (canonical author list)
+            #   advisor / thesisadvisor / supervisor → _advisor (own field)
+            # Other qualifiers (editor, illustrator) are dropped — not
+            # surfaced anywhere yet.
+            if element == "contributor":
+                if qualifier == "author":
+                    _add(fields, "creator", text)
+                elif qualifier in ("advisor", "thesisadvisor", "supervisor"):
+                    _add(fields, "_advisor", text)
             else:
                 _add(fields, element, text)
         elif element == "degree" and qualifier in ("level", "name"):
@@ -188,6 +192,13 @@ def parse_oai_etdms(record):
         tag = child.tag.split("}", 1)[-1]
         if tag in SIMPLE:
             _add(fields, SIMPLE[tag], (child.text or "").strip())
+        elif tag == "contributor":
+            # ETDMS 1.0+: <contributor role="advisor|supervisor|thesisAdvisor">.
+            # Other roles (committeeMember, examiner) are dropped.
+            role = (child.get("role") or "").strip().lower()
+            text = (child.text or "").strip()
+            if text and role in ("advisor", "supervisor", "thesisadvisor"):
+                _add(fields, "_advisor", text)
 
     degree = thesis.find(f"{{{ns}}}degree")
     if degree is not None:
