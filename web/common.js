@@ -53,6 +53,57 @@ function stripWithMap(text) {
 
 const _escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** Iterative Levenshtein. Cheap enough for token-vs-vocabulary comparisons
+ *  at the scale we use (≤200 vocabulary entries × a handful of tokens). */
+function editDistance(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array(b.length + 1);
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    const curr = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    prev = curr;
+  }
+  return prev[b.length];
+}
+
+/** Find the closest vocabulary entry for a token within an edit-distance
+ *  budget of ~1 typo per 4 chars. Returns null if nothing's close. */
+function closestMatch(token, vocabulary) {
+  if (token.length < 4) return null;
+  const budget = Math.max(1, Math.floor(token.length / 4));
+  let best = null, bestDist = budget + 1;
+  for (const entry of vocabulary) {
+    if (Math.abs(entry.length - token.length) > budget) continue;
+    const d = editDistance(token, entry);
+    if (d < bestDist) { bestDist = d; best = entry; }
+  }
+  return best && best !== token ? best : null;
+}
+
+/** Build a "did you mean: …" suggestion by token-substituting against the
+ *  vocabulary built at bootstrap. */
+function didYouMean(query, vocabulary) {
+  const fold = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const rawTokens = query.split(/\s+/).filter(Boolean);
+  let changed = false;
+  const corrected = rawTokens.map(tok => {
+    const folded = fold(tok);
+    const match = closestMatch(folded, vocabulary);
+    if (match && match !== folded) {
+      changed = true;
+      return match;
+    }
+    return tok;
+  }).join(" ");
+  return changed ? corrected : null;
+}
+
 function highlight(text, q) {
   if (!text) return "";
   const safe = escapeHTML(text);
@@ -146,6 +197,11 @@ export async function bootstrap(backend, options = {}) {
   };
   const facetState = { discFilter: "", discShowAll: false, srcShowAll: false };
   let lastFacets = {};
+  // Vocabulary for didYouMean — folded (lowercased + diacritic-stripped) labels
+  // from discipline + source facets. Built lazily on the first non-zero search
+  // and reused thereafter; stable enough that we don't need to recompute it
+  // every keystroke.
+  let vocabulary = null;
 
   // ---------------------------------------------------------- url sync ---
   function readURL() {
@@ -178,15 +234,29 @@ export async function bootstrap(backend, options = {}) {
     const ul = $("#results");
     ul.innerHTML = "";
     if (!results.length) {
+      const suggestion = (state.q && vocabulary) ? didYouMean(state.q, vocabulary) : null;
+      const suggestHTML = suggestion ? `
+          <p class="text-sm text-ink-600 dark:text-ink-300 mt-3">
+            Voulez-vous dire :
+            <button data-suggest="${escapeHTML(suggestion)}" class="font-medium text-accent-500 dark:text-accent-300 hover:text-accent-600 dark:hover:text-accent-200 underline decoration-dotted underline-offset-2">« ${escapeHTML(suggestion)} »</button> ?
+          </p>` : "";
       ul.innerHTML = `
         <li class="bg-white dark:bg-ink-800 border border-dashed border-ink-300 dark:border-ink-600 rounded-lg p-8 text-center">
           <div class="w-12 h-12 mx-auto rounded-full bg-ink-100 dark:bg-ink-700 grid place-items-center text-ink-400 dark:text-ink-500 mb-3">
             <svg viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/></svg>
           </div>
           <p class="font-medium text-ink-700 dark:text-ink-200">Aucun résultat</p>
-          <p class="text-sm text-ink-500 dark:text-ink-400 mt-1">Essayez d'élargir vos critères ou utilisez d'autres mots-clés.</p>
+          <p class="text-sm text-ink-500 dark:text-ink-400 mt-1">Essayez d'élargir vos critères ou utilisez d'autres mots-clés.</p>${suggestHTML}
           <button onclick="document.getElementById('reset').click()" class="mt-4 text-sm font-medium text-accent-500 dark:text-accent-300 hover:text-accent-600 dark:hover:text-accent-200">Réinitialiser la recherche →</button>
         </li>`;
+      const sb = ul.querySelector("[data-suggest]");
+      if (sb) sb.addEventListener("click", () => {
+        const term = sb.dataset.suggest;
+        state.q = term; state.page = 1;
+        $("#q").value = term;
+        $("#q-clear").classList.toggle("hidden", !term);
+        runSearch();
+      });
       return;
     }
     const tpl = $("#tmpl-result");
@@ -292,17 +362,35 @@ export async function bootstrap(backend, options = {}) {
     }
     updateFacetBadge("#src-active", state.source.size);
 
-    // decades
+    // decades — horizontal bar chart, one row per decade, sorted chronologically.
+    // Bar width is proportional to the largest decade in the current result
+    // set; clicking a row toggles a year-range filter on that decade.
     const decEl = $("#facet-decades");
     decEl.innerHTML = "";
-    for (const d of (facets.decade || [])) {
+    const decades = (facets.decade || []).slice().sort((a, b) => a.value.localeCompare(b.value));
+    const maxN = decades.reduce((m, d) => Math.max(m, d.n), 0) || 1;
+    for (const d of decades) {
       const start = parseInt(d.value, 10);
       const active = state.year_min === start && state.year_max === start + 9;
+      const pct = Math.max(2, Math.round((d.n / maxN) * 100));
       const b = document.createElement("button");
-      b.className = "w-full flex items-center px-2 py-1 rounded text-left transition " +
+      b.className = "w-full text-left rounded px-2 py-1 transition group " +
         (active ? "bg-ink-800 dark:bg-ink-600 text-white"
           : "hover:bg-ink-100 dark:hover:bg-ink-700 text-ink-700 dark:text-ink-200");
-      b.innerHTML = `<span class="flex-1">${d.label}</span><span class="text-xs ${active ? "text-ink-300" : "text-ink-400 dark:text-ink-500"} tabular-nums">${fmt(d.n)}</span>`;
+      b.setAttribute("aria-pressed", String(active));
+      b.setAttribute("aria-label", `Décennie ${d.label}, ${d.n} résultats`);
+      const barColor = active
+        ? "bg-white/30"
+        : "bg-accent-200/70 dark:bg-accent-300/30 group-hover:bg-accent-300/80 dark:group-hover:bg-accent-300/40";
+      const countColor = active ? "text-ink-100" : "text-ink-500 dark:text-ink-400";
+      b.innerHTML = `
+        <div class="flex items-baseline justify-between text-xs mb-0.5">
+          <span class="tabular-nums">${escapeHTML(d.label)}</span>
+          <span class="tabular-nums ${countColor}">${fmt(d.n)}</span>
+        </div>
+        <div class="h-1.5 rounded-full bg-ink-100/70 dark:bg-ink-700/70 overflow-hidden">
+          <div class="h-full ${barColor} rounded-full transition-all" style="width: ${pct}%"></div>
+        </div>`;
       b.onclick = () => {
         if (active) { state.year_min = state.year_max = null; }
         else { state.year_min = start; state.year_max = start + 9; }
@@ -450,6 +538,25 @@ export async function bootstrap(backend, options = {}) {
       `${response.total === 1 ? "résultat" : "résultats"}` +
       (state.q ? ` pour <span class="text-ink-900 dark:text-ink-50">« ${escapeHTML(state.q)} »</span>` : "") +
       ` <span class="text-ink-400 dark:text-ink-500">· ${dt} ms</span>`;
+
+    // Build the didYouMean vocabulary from the first non-empty facets we see.
+    // Discipline + source labels are the most useful corrections; we also
+    // sprinkle in tokens that appear inside multi-word labels so a typo in
+    // "psychologie" still maps even when the full label is "Psychologie".
+    if (!vocabulary && response.facets) {
+      const fold = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      const set = new Set();
+      const harvest = (arr) => {
+        for (const it of (arr || [])) {
+          for (const tok of fold(it.label).split(/[^a-z0-9]+/)) {
+            if (tok.length >= 4) set.add(tok);
+          }
+        }
+      };
+      harvest(response.facets.discipline);
+      harvest(response.facets.source);
+      if (set.size) vocabulary = [...set];
+    }
 
     renderResults(response.results);
     renderPager(response.total, state.page, state.size);

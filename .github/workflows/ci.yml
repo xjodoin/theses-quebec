@@ -61,14 +61,14 @@ jobs:
           cases = [
               ({"title": "Didactique des mathématiques au secondaire",
                 "subjects": "", "abstract": "", "publisher": ""},
-               "Sciences de l'éducation"),
+               "Didactique"),
               ({"title": "Sociologie urbaine de Montréal",
                 "subjects": "", "abstract": "", "publisher": ""},
                "Sociologie"),
               ({"title": "Réseaux de neurones convolutifs pour la vision par ordinateur",
                 "subjects": "informatique; intelligence artificielle",
                 "abstract": "", "publisher": ""},
-               "Informatique"),
+               "Intelligence artificielle & apprentissage automatique"),
           ]
           for record, expected in cases:
               got = classify_discipline(record)

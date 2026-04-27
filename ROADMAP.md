@@ -104,10 +104,10 @@ backport). Click sur titre ouvre le modal détail (et non la source).
 | # | Amélioration | Effort | Valeur | Statut |
 |---|---|---|---|---|
 | 5.1 | **Recherche sémantique** — embeddings sentence-transformer multilingue (LaBSE / paraphrase-multilingual-MiniLM), index FAISS / WASM, recherche par similarité. ~50 MB. | L | ✶✶✶ | scale |
-| 5.2 | **« Did you mean? »** — suggestions de correction sur 0 résultat. Trigramme + dist. Levenshtein. | S | ✶✶ | ⏳ |
+| 5.2 | **« Did you mean? »** — suggestions de correction sur 0 résultat. Trigramme + dist. Levenshtein. | S | ✶✶ | ✅ v0.6 |
 | 5.3 | **Recherche par auteur fuzzy** — variantes nom/prénom (« Jodoin, M. » vs « Maude Jodoin »). | M | ✶✶ | ⏳ |
 | 5.4 | **Compare 2+ disciplines / décennies** — vue côte-à-côte, courbes temporelles. | M | ✶ | ⏳ |
-| 5.5 | **Graphique temporel** — distribution annuelle par discipline (chart.js / svg natif). | S | ✶✶ | ⏳ |
+| 5.5 | **Graphique temporel** — distribution annuelle par discipline (chart.js / svg natif). | S | ✶✶ | ✅ v0.6 (par décennie) |
 | 5.6 | **Sauvegarder une recherche** — localStorage, retour facile à 5 dernières requêtes. | S | ✶ | ⏳ |
 | 5.7 | **Détection de doublons** — même thèse archivée à plusieurs endroits (rare mais existe). | M | ✶ | ⏳ |
 
@@ -163,15 +163,17 @@ backport). Click sur titre ouvre le modal détail (et non la source).
 ## v0.5.2 — livrée ✅
 - **1.7** Surlignage diacritiques-aware — `<mark>` couvre les variantes accentuées dans les deux sens
 
-## v0.6 — proposition (qualité + données)
-1. **5.2** « Did you mean? » sur 0 résultat
-2. **5.5** Graphique temporel (distribution annuelle par discipline)
-3. **3.6** Documentation interne (`docs/` schema DB, format JSONL Gemini)
-4. **2.7** Fallback PDF text extraction pour records sans abstract
-5. **5.6** Sauvegarder les recherches récentes (localStorage)
-6. **3.3** i18n EN (toggle FR/EN)
+## v0.6 — livrée ✅ (qualité de recherche)
+- **5.2** « Did you mean? » — Levenshtein-tolérant (1 typo / 4 chars), vocabulaire construit à partir des labels de facettes (discipline + dépôt) repliés NFD-lowercase. Suggestion cliquable injectée dans l'état vide.
+- **5.5** Graphique temporel — barres horizontales par décennie, largeur proportionnelle au max. Click toggle filtre `year_min`/`year_max`. Trié chronologiquement, `aria-pressed` + `aria-label`.
 
-## v0.7+ — propositions ouvertes
+## v0.7 — proposition (qualité + données)
+1. **3.6** Documentation interne (`docs/` schema DB, format JSONL Gemini)
+2. **2.7** Fallback PDF text extraction pour records sans abstract
+3. **5.6** Sauvegarder les recherches récentes (localStorage)
+4. **3.3** i18n EN (toggle FR/EN)
+
+## v0.8+ — propositions ouvertes
 - **2.6** Dépôts canadiens hors-Québec (rebrand `theses-canada`?)
 - **5.1** Recherche sémantique (embeddings)
 - **4.5** Dataset sur HuggingFace
