@@ -159,6 +159,7 @@ function bibtex(r) {
   if (r.year)    fields.push(`  year   = {${r.year}}`);
   if (r.source_name) fields.push(`  school = {${r.source_name}}`);
   fields.push(`  type   = {${r.type === "memoire" ? "Mémoire de maîtrise" : "Thèse de doctorat"}}`);
+  if (r.advisors) fields.push(`  note   = {Sous la direction de ${r.advisors.split(/;\s*/).join(" et ")}}`);
   if (r.url)     fields.push(`  url    = {${r.url}}`);
   return `${type}{${citeKey(r)},\n${fields.join(",\n")}\n}`;
 }
@@ -178,6 +179,8 @@ function apa(r) {
 function ris(r) {
   const lines = ["TY  - THES"];
   for (const a of (r.authors || "").split(/;\s*/).filter(Boolean)) lines.push(`AU  - ${a}`);
+  // RIS: A2 is the conventional secondary-author tag for thesis advisors.
+  for (const a of (r.advisors || "").split(/;\s*/).filter(Boolean)) lines.push(`A2  - ${a}`);
   if (r.title) lines.push(`TI  - ${r.title}`);
   if (r.year)  lines.push(`PY  - ${r.year}`);
   if (r.source_name) lines.push(`PB  - ${r.source_name}`);
@@ -279,6 +282,19 @@ export async function bootstrap(backend, options = {}) {
       authors.innerHTML = r.authors
         ? highlight((r.authors.split(/;\s*/).slice(0, 4).join(" · ")), state.q)
         : '<span class="text-ink-400 dark:text-ink-500 italic">auteur·rice non renseigné</span>';
+
+      // Advisors: hidden by default in the template; show "Direction : …" when
+      // present. Truncated to first 3 to keep the card compact.
+      const advisors = li.querySelector("[data-advisors]");
+      if (advisors) {
+        if (r.advisors) {
+          const list = r.advisors.split(/;\s*/).slice(0, 3).join(" · ");
+          advisors.innerHTML = `<span class="text-ink-400 dark:text-ink-500">Direction&nbsp;:</span> ${highlight(list, state.q)}`;
+          advisors.classList.remove("hidden");
+        } else {
+          advisors.classList.add("hidden");
+        }
+      }
 
       const ab = li.querySelector("[data-abstract]");
       if (r.excerpt) ab.innerHTML = r.excerpt;
@@ -476,7 +492,22 @@ export async function bootstrap(backend, options = {}) {
       tb.className = (tb.className.split(" ").filter(c => !c.startsWith("bg-") && !c.startsWith("text-") && !c.includes("dark:")).join(" ") + " " + ts.cls).trim();
     }
     setVal("[data-discipline]", record.discipline || "Non classé");
-    setVal("[data-authors]", record.authors || "—");
+    setVal("[data-authors]", record.authors ? record.authors.replaceAll(";", " ·") : "—");
+    // Advisors row: shown only when present. Toggling both the dt label and
+    // the dd value so the dl grid collapses cleanly on records that don't
+    // have advisors (most EPrints sources).
+    const advLabel = $("[data-advisors-label]", modal);
+    const advVal = $("[data-advisors]", modal);
+    if (advLabel && advVal) {
+      if (record.advisors) {
+        advVal.textContent = record.advisors.replaceAll(";", " ·");
+        advLabel.classList.remove("hidden");
+        advVal.classList.remove("hidden");
+      } else {
+        advLabel.classList.add("hidden");
+        advVal.classList.add("hidden");
+      }
+    }
     const ttype = record.type === "memoire" ? "Mémoire de maîtrise" : "Thèse de doctorat";
     setVal("[data-meta]", [record.source_name, record.year, ttype].filter(Boolean).join(" · "));
     setVal("[data-abstract]", record.abstract || "(résumé non disponible)");

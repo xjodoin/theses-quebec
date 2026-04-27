@@ -40,7 +40,7 @@ const rows = db
   .prepare(
     `SELECT
        rowid AS id,
-       oai_identifier, title, authors, abstract, subjects,
+       oai_identifier, title, authors, advisors, abstract, subjects,
        year, type, source_id, source_name, discipline,
        discipline_source, authoritative_discipline, language, url
      FROM theses
@@ -87,10 +87,12 @@ for (const r of rows) {
   // The `content` is what Pagefind indexes for full-text search. We
   // concatenate title + subjects + abstract; field weighting is handled by
   // Pagefind's heuristics (title-ish HTML hints would help, but with custom
-  // records we settle for token frequency and the stemmer).
+  // records we settle for token frequency and the stemmer). Advisors are
+  // included so a name search ("Pâquet") finds theses they directed.
   const content = [
     r.title,
     r.subjects,
+    r.advisors,
     abstract,
   ].filter(Boolean).join("\n\n");
 
@@ -102,6 +104,7 @@ for (const r of rows) {
 
   if (r.title) meta.title = r.title;
   if (r.authors) meta.authors = r.authors;
+  if (r.advisors) meta.advisors = r.advisors;
   if (r.abstract) meta.abstract = abstract;
   if (r.year) {
     meta.year = String(r.year);

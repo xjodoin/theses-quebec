@@ -67,6 +67,7 @@ export default {
         id: search.results[start + i].id,
         title: m.title,
         authors: m.authors,
+        advisors: m.advisors || null,
         abstract: m.abstract,
         year: m.year ? Number(m.year) : null,
         type: m.type,

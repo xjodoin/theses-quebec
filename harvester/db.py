@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS theses (
     source_name    TEXT NOT NULL,
     title          TEXT NOT NULL,
     authors        TEXT,
+    advisors       TEXT,           -- direction (DSpace contributor@advisor, ETDMS contributor[role=advisor])
     abstract       TEXT,
     subjects       TEXT,
     year           INTEGER,
@@ -54,26 +55,26 @@ CREATE TABLE IF NOT EXISTS harvest_state (
 
 -- FTS5 contentless-external table mirrors searchable fields.
 CREATE VIRTUAL TABLE IF NOT EXISTS theses_fts USING fts5(
-    title, authors, abstract, subjects,
+    title, authors, advisors, abstract, subjects,
     content='theses', content_rowid='rowid',
     tokenize='unicode61 remove_diacritics 2'
 );
 
 CREATE TRIGGER IF NOT EXISTS theses_ai AFTER INSERT ON theses BEGIN
-    INSERT INTO theses_fts(rowid, title, authors, abstract, subjects)
-    VALUES (new.rowid, new.title, new.authors, new.abstract, new.subjects);
+    INSERT INTO theses_fts(rowid, title, authors, advisors, abstract, subjects)
+    VALUES (new.rowid, new.title, new.authors, new.advisors, new.abstract, new.subjects);
 END;
 
 CREATE TRIGGER IF NOT EXISTS theses_ad AFTER DELETE ON theses BEGIN
-    INSERT INTO theses_fts(theses_fts, rowid, title, authors, abstract, subjects)
-    VALUES('delete', old.rowid, old.title, old.authors, old.abstract, old.subjects);
+    INSERT INTO theses_fts(theses_fts, rowid, title, authors, advisors, abstract, subjects)
+    VALUES('delete', old.rowid, old.title, old.authors, old.advisors, old.abstract, old.subjects);
 END;
 
 CREATE TRIGGER IF NOT EXISTS theses_au AFTER UPDATE ON theses BEGIN
-    INSERT INTO theses_fts(theses_fts, rowid, title, authors, abstract, subjects)
-    VALUES('delete', old.rowid, old.title, old.authors, old.abstract, old.subjects);
-    INSERT INTO theses_fts(rowid, title, authors, abstract, subjects)
-    VALUES (new.rowid, new.title, new.authors, new.abstract, new.subjects);
+    INSERT INTO theses_fts(theses_fts, rowid, title, authors, advisors, abstract, subjects)
+    VALUES('delete', old.rowid, old.title, old.authors, old.advisors, old.abstract, old.subjects);
+    INSERT INTO theses_fts(rowid, title, authors, advisors, abstract, subjects)
+    VALUES (new.rowid, new.title, new.authors, new.advisors, new.abstract, new.subjects);
 END;
 """
 
@@ -105,6 +106,30 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "authoritative_discipline" not in cols:
         conn.execute(
             "ALTER TABLE theses ADD COLUMN authoritative_discipline TEXT"
+        )
+        conn.commit()
+    if "advisors" not in cols:
+        # New column → also widen the FTS5 mirror. SQLite FTS5 doesn't support
+        # ALTER on a contentless table cleanly (you'd need to drop+recreate),
+        # so we drop the FTS table and its triggers and let the new SCHEMA
+        # block re-create them on the next connect(). The next harvest's
+        # UPDATE/INSERT triggers will repopulate the index from the base table.
+        conn.execute("ALTER TABLE theses ADD COLUMN advisors TEXT")
+        conn.execute("DROP TRIGGER IF EXISTS theses_ai")
+        conn.execute("DROP TRIGGER IF EXISTS theses_au")
+        conn.execute("DROP TRIGGER IF EXISTS theses_ad")
+        conn.execute("DROP TABLE IF EXISTS theses_fts")
+        conn.commit()
+        # The SCHEMA executescript() that ran just before us hit IF NOT EXISTS
+        # and skipped the new shape. Re-run it now that the old objects are
+        # gone — `connect` will call this again on next open, but applying it
+        # here keeps the current connection consistent.
+        conn.executescript(SCHEMA)
+        # Repopulate FTS5 from the base table (existing rows have no triggers
+        # firing, since the rows already exist).
+        conn.execute(
+            "INSERT INTO theses_fts(rowid, title, authors, advisors, abstract, subjects) "
+            "SELECT rowid, title, authors, advisors, abstract, subjects FROM theses"
         )
         conn.commit()
 
@@ -140,8 +165,9 @@ def upsert_thesis(conn: sqlite3.Connection, row: dict) -> None:
     correctly updates them.
     """
     cols = ("oai_identifier", "source_id", "source_name", "title", "authors",
-            "abstract", "subjects", "year", "type", "language", "publisher",
-            "url", "discipline", "authoritative_discipline", "datestamp")
+            "advisors", "abstract", "subjects", "year", "type", "language",
+            "publisher", "url", "discipline", "authoritative_discipline",
+            "datestamp")
     placeholders = ", ".join(["?"] * len(cols))
     # The classifier pass tag, defaulting to 'rule' for callers that haven't
     # adopted the detailed classifier yet.
