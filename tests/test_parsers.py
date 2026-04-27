@@ -87,6 +87,22 @@ def test_dim_handles_etd_schema_for_udem():
     assert "Maîtrise" in out["dc"]["type"]
 
 
+def test_dim_handles_multiple_authors():
+    """Multi-author records: every contributor@author should land in creator
+    in source order, so downstream `_join` produces a `; `-separated string."""
+    rec = _wrap("""
+      <dim:dim xmlns:dim="http://www.dspace.org/xmlns/dspace/dim">
+        <dim:field mdschema="dc" element="title">Co-authored thesis</dim:field>
+        <dim:field mdschema="dc" element="contributor" qualifier="author">Smith, John</dim:field>
+        <dim:field mdschema="dc" element="contributor" qualifier="author">Doe, Jane</dim:field>
+        <dim:field mdschema="dc" element="contributor" qualifier="author">García, María</dim:field>
+        <dim:field mdschema="dc" element="type">Mémoire de maîtrise</dim:field>
+      </dim:dim>
+    """)
+    out = parse_record(rec, "dim")
+    assert out["dc"]["creator"] == ["Smith, John", "Doe, Jane", "García, María"]
+
+
 def test_dim_separates_author_from_advisor():
     """DSpace records have multiple contributor qualifiers — only `author`
     should land in `creator`. Advisors and editors stay under `contributor`."""
