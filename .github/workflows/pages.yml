@@ -1,7 +1,7 @@
 name: Deploy to GitHub Pages
 
-# Construit le site statique (SQLite → MiniSearch index pré-compilé →
-# dist/) et le déploie sur GitHub Pages. Se déclenche :
+# Construit le site statique (SQLite → Pagefind chunks → dist/) et le
+# déploie sur GitHub Pages. Se déclenche :
 #   - à chaque push sur main qui touche au code source ou à la DB
 #     (le harvest hebdomadaire commit la DB rafraîchie → redéploie)
 #   - manuellement via l'onglet Actions
@@ -12,7 +12,7 @@ on:
     paths:
       - "data/theses.db"
       - "scripts/build.mjs"
-      - "web/static.html"
+      - "web/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/pages.yml"
