@@ -452,16 +452,27 @@ export async function bootstrap(backend, options = {}) {
     });
   }
 
-  // Result card click → modal
+  // Result card click → detail modal.
+  // Exceptions:
+  //   - clicking the small "ouvrir ↗" link (`[data-open]`) navigates to the
+  //     source page (it's the explicit "I want to leave" gesture)
+  //   - clicking a chip / button (filter chips) lets that handler fire
+  //   - selecting text doesn't trigger
+  // The title link `[data-link]` *does* open the modal — we cancel its
+  // default navigation. Right-click and Cmd/Ctrl+click still respect the
+  // href so users can open the source in a new tab if they want.
   $("#results").addEventListener("click", (e) => {
-    if (e.target.closest("a, button")) return;
+    if (e.target.closest("[data-open]")) return;
+    if (e.target.closest("button")) return;
     if (window.getSelection?.()?.toString().length > 0) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+    if (e.target.closest("[data-link]")) e.preventDefault();
     const li = e.target.closest("li");
     if (li?._record) openDetailModal(li._record);
   });
   $("#results").addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
-    if (e.target.closest("a, button, input, textarea, select")) return;
+    if (e.target.closest("[data-open], button, input, textarea, select")) return;
     const li = e.target.closest("li");
     if (li?._record) { e.preventDefault(); openDetailModal(li._record); }
   });
