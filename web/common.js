@@ -601,11 +601,31 @@ export async function bootstrap(backend, options = {}) {
   }
 
   // ---------------------------------------------------------- wiring -----
+  // Search-input debounce. The trade-offs that shaped these numbers:
+  //   - 250 ms is just over the keystroke-to-keystroke gap of a fast typist
+  //     (~150-200 ms) so it usually fires once per word, not once per letter.
+  //   - Empty value bypasses the timer: clearing the box should reset
+  //     instantly, since the user already saw the result they wanted to back
+  //     out of.
+  //   - Trimmed-equal short-circuit avoids re-issuing the same query when
+  //     the user types and deletes a trailing space (or pastes the same text).
+  //   - The race-condition guard inside runSearch (lastSearchToken) keeps
+  //     stale results from clobbering newer ones, so we don't need to abort.
   let qTimer;
+  const DEBOUNCE_MS = 250;
   $("#q").addEventListener("input", (e) => {
     clearTimeout(qTimer);
-    $("#q-clear").classList.toggle("hidden", !e.target.value);
-    qTimer = setTimeout(() => { state.q = e.target.value; state.page = 1; runSearch(); }, 200);
+    const value = e.target.value;
+    $("#q-clear").classList.toggle("hidden", !value);
+    const fire = () => {
+      const next = value.trim();
+      if (next === state.q.trim()) return;        // no semantic change
+      state.q = value;
+      state.page = 1;
+      runSearch();
+    };
+    if (!value) fire();                           // clearing → no debounce
+    else qTimer = setTimeout(fire, DEBOUNCE_MS);
   });
   $("#q-clear").addEventListener("click", () => {
     $("#q").value = ""; state.q = ""; state.page = 1;
