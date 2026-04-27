@@ -804,6 +804,226 @@ export async function bootstrap(backend, options = {}) {
   // tab focus + every 15 min, compare built_at, surface a 1-click reload.
   // Skipped on the FastAPI variant (builtAt: null) — the API is always live.
   if (init.builtAt) startUpdateWatcher(init.builtAt);
+
+  // ------------------------------------------------------ saved searches --
+  // localStorage-backed: a "Mes recherches" dropdown that surfaces the last
+  // 8 distinct searches (auto-tracked) plus any the user has explicitly
+  // pinned with the star button. State is serialized as a URL query string
+  // so restoring is just `location.search = "..."` followed by readURL +
+  // runSearch — no separate restore code path to keep in sync.
+  startSavedSearches(state, runSearch, readURL, syncFormFromState, writeURL);
+}
+
+function startSavedSearches(state, runSearch, readURL, syncFormFromState, writeURL) {
+  const trigger = document.querySelector("#my-searches");
+  if (!trigger) return;
+
+  const SAVED_KEY = "tq:saved-searches";
+  const RECENT_KEY = "tq:recent-searches";
+  const MAX_RECENT = 8;
+
+  const loadJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || "[]"); } catch { return []; } };
+  const saveJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+
+  /** Serialize state to a URL query string — same shape as writeURL produces,
+   *  computed without mutating history. Used as the dedup key. */
+  function searchKey(s) {
+    const p = new URLSearchParams();
+    if (s.q) p.set("q", s.q);
+    if (s.type) p.set("type", s.type);
+    if (s.year_min) p.set("year_min", s.year_min);
+    if (s.year_max) p.set("year_max", s.year_max);
+    if (s.sort && s.sort !== "relevance") p.set("sort", s.sort);
+    for (const d of s.discipline) p.append("discipline", d);
+    for (const so of s.source) p.append("source", so);
+    return p.toString();
+  }
+
+  function summarize(s) {
+    const parts = [];
+    if (s.q) parts.push(`« ${s.q} »`);
+    if (s.type) parts.push(s.type === "thesis" ? "Thèses" : "Mémoires");
+    if (s.year_min || s.year_max) parts.push(`${s.year_min || "…"}–${s.year_max || "…"}`);
+    for (const d of s.discipline) parts.push(d);
+    for (const so of s.source) parts.push(so);
+    return parts.join(" · ") || "(aucun filtre)";
+  }
+
+  function isCurrentSaved() {
+    const key = searchKey(state);
+    return loadJSON(SAVED_KEY).some(s => s.search === key);
+  }
+
+  function pushRecent() {
+    const key = searchKey(state);
+    if (!key) return;
+    const recent = loadJSON(RECENT_KEY).filter(r => r.search !== key);
+    recent.unshift({ search: key, label: summarize(state), ranAt: new Date().toISOString() });
+    saveJSON(RECENT_KEY, recent.slice(0, MAX_RECENT));
+    refreshBadge();
+  }
+  function saveCurrent() {
+    const key = searchKey(state);
+    if (!key) return;
+    const saved = loadJSON(SAVED_KEY);
+    if (saved.some(s => s.search === key)) return;  // already pinned
+    saved.unshift({
+      id: (crypto.randomUUID?.() || String(Date.now() + Math.random())),
+      search: key,
+      label: summarize(state),
+      savedAt: new Date().toISOString(),
+    });
+    saveJSON(SAVED_KEY, saved);
+    refreshBadge();
+    renderPanel();
+  }
+  function removeSaved(id) {
+    saveJSON(SAVED_KEY, loadJSON(SAVED_KEY).filter(s => s.id !== id));
+    refreshBadge();
+    renderPanel();
+  }
+  function clearRecent() {
+    saveJSON(RECENT_KEY, []);
+    refreshBadge();
+    renderPanel();
+  }
+  function restore(searchStr) {
+    history.replaceState(null, "", searchStr ? `?${searchStr}` : location.pathname);
+    readURL();
+    syncFormFromState();
+    state.page = 1;
+    closePanel();
+    runSearch();
+  }
+
+  function refreshBadge() {
+    const n = loadJSON(SAVED_KEY).length;
+    const badge = trigger.querySelector("[data-my-count]");
+    if (!badge) return;
+    if (n > 0) { badge.textContent = n; badge.classList.remove("hidden"); }
+    else badge.classList.add("hidden");
+  }
+
+  // ---------- panel ----------
+  let panel = null;
+  function openPanel() {
+    if (panel) return;
+    panel = document.createElement("div");
+    panel.id = "my-searches-panel";
+    panel.setAttribute("role", "menu");
+    panel.className = "absolute z-50 mt-1 w-80 max-w-[calc(100vw-1rem)] bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 rounded-md shadow-card-hover overflow-hidden text-sm";
+    document.body.appendChild(panel);
+    renderPanel();
+    positionPanel();
+    trigger.setAttribute("aria-expanded", "true");
+    setTimeout(() => {
+      document.addEventListener("click", onOutsideClick, true);
+      window.addEventListener("resize", positionPanel);
+      window.addEventListener("scroll", positionPanel, true);
+    }, 0);
+  }
+  function closePanel() {
+    if (!panel) return;
+    panel.remove();
+    panel = null;
+    trigger.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", onOutsideClick, true);
+    window.removeEventListener("resize", positionPanel);
+    window.removeEventListener("scroll", positionPanel, true);
+  }
+  function onOutsideClick(e) {
+    if (!panel) return;
+    if (panel.contains(e.target) || trigger.contains(e.target)) return;
+    closePanel();
+  }
+  function positionPanel() {
+    if (!panel) return;
+    const r = trigger.getBoundingClientRect();
+    panel.style.top = `${r.bottom + window.scrollY + 4}px`;
+    // Align right edge to trigger's right edge so it doesn't overflow on
+    // mobile; clamp left so it stays on-screen.
+    const right = window.innerWidth - r.right;
+    panel.style.right = `${Math.max(8, right)}px`;
+    panel.style.left = "auto";
+  }
+
+  function renderPanel() {
+    if (!panel) return;
+    const saved = loadJSON(SAVED_KEY);
+    const recent = loadJSON(RECENT_KEY);
+    const currentSaved = isCurrentSaved();
+    const hasCurrentFilters = !!searchKey(state);
+
+    const sectionTitle = (text, action) => `
+      <div class="flex items-center justify-between px-3 pt-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-400 dark:text-ink-500">
+        <span>${text}</span>${action || ""}
+      </div>`;
+
+    const row = (item, kind) => `
+      <div class="group flex items-center gap-1 px-2 py-1 hover:bg-ink-50 dark:hover:bg-ink-700/60">
+        <button data-restore="${escapeHTML(item.search)}" class="flex-1 min-w-0 text-left px-1 py-1 rounded">
+          <div class="truncate text-ink-900 dark:text-ink-50">${escapeHTML(item.label)}</div>
+        </button>
+        <button data-${kind}="${kind === "remove" ? escapeHTML(item.id) : escapeHTML(item.search)}"
+                class="opacity-0 group-hover:opacity-100 focus:opacity-100 px-1.5 py-1 rounded text-ink-400 hover:text-ink-900 dark:text-ink-500 dark:hover:text-ink-100 hover:bg-ink-200 dark:hover:bg-ink-600 text-xs"
+                aria-label="${kind === "remove" ? "Supprimer" : "Retirer de l'historique"}">×</button>
+      </div>`;
+
+    panel.innerHTML = `
+      <div class="p-2 border-b border-ink-100 dark:border-ink-700">
+        <button data-pin class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md ${
+          hasCurrentFilters && !currentSaved
+            ? "bg-accent-500 hover:bg-accent-600 text-white"
+            : "bg-ink-100 dark:bg-ink-700 text-ink-400 dark:text-ink-500 cursor-not-allowed"
+        } text-xs font-medium" ${(!hasCurrentFilters || currentSaved) ? "disabled" : ""}>
+          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="${currentSaved ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/>
+          </svg>
+          ${currentSaved ? "Recherche déjà sauvegardée" : (hasCurrentFilters ? "Sauvegarder cette recherche" : "Aucune recherche à sauvegarder")}
+        </button>
+      </div>
+      ${saved.length ? sectionTitle("Sauvegardées") + saved.map(s => row(s, "remove")).join("") : ""}
+      ${recent.length ? sectionTitle("Récentes",
+        `<button data-clear-recent class="hover:underline normal-case font-normal">vider</button>`)
+        + recent.map(r => row({ ...r, id: r.search }, "forget")).join("") : ""}
+      ${(!saved.length && !recent.length) ? `
+        <div class="px-3 py-6 text-center text-xs text-ink-400 dark:text-ink-500">
+          Aucune recherche enregistrée pour l'instant.
+        </div>` : ""}
+    `;
+
+    panel.querySelectorAll("[data-restore]").forEach(b =>
+      b.addEventListener("click", () => restore(b.dataset.restore)));
+    panel.querySelectorAll("[data-remove]").forEach(b =>
+      b.addEventListener("click", (e) => { e.stopPropagation(); removeSaved(b.dataset.remove); }));
+    panel.querySelectorAll("[data-forget]").forEach(b =>
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const key = b.dataset.forget;
+        saveJSON(RECENT_KEY, loadJSON(RECENT_KEY).filter(r => r.search !== key));
+        renderPanel();
+      }));
+    const pinBtn = panel.querySelector("[data-pin]");
+    if (pinBtn && !pinBtn.disabled) pinBtn.addEventListener("click", saveCurrent);
+    const clearBtn = panel.querySelector("[data-clear-recent]");
+    if (clearBtn) clearBtn.addEventListener("click", clearRecent);
+  }
+
+  // Wire the trigger and auto-track on every search.
+  trigger.addEventListener("click", () => panel ? closePanel() : openPanel());
+  // Hook into search lifecycle by patching writeURL — it's called once per
+  // runSearch and after readURL has populated state from the URL.
+  const _writeURL = writeURL;
+  // We can't shadow the closure-bound writeURL inside bootstrap, so instead
+  // we monitor history changes via popstate + a periodic check tied to the
+  // URL. Simpler: monkey-patch history.replaceState (which writeURL uses).
+  const origReplace = history.replaceState.bind(history);
+  history.replaceState = function (...args) {
+    origReplace(...args);
+    pushRecent();
+  };
+
+  refreshBadge();
 }
 
 /** Watch for a newer build and show a reload banner when one ships. */
