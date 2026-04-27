@@ -179,6 +179,14 @@ backport). Click sur titre ouvre le modal détail (et non la source).
 - **Polish** : suppression du clear-X natif WebKit qui chevauchait notre badge `esc` ; lien footer pointe vers `data/theses.db` (LFS) au lieu du défunt `search.json` ; footer crédite Pagefind, plus MiniSearch ; tag de version v0.1 → v0.6.
 - **Workflow Pages élargi** à `web/**` (auparavant `web/static.html` seul, donc les modifs `common.js` ne re-déployaient pas).
 
+## v0.6.2 — livrée ✅ (couverture + harvester resilience)
+- **Bug majeur — UKETD empty-payload** : UQAM (et à degré moindre UQAC) émettait `<uketd_dc:uketddc/>` vide pour ~80 % de ses records pré-2014, alors que `oai_dc` retournait le DC complet pour les mêmes identifiants. Notre `parse_uketd_dc` retournait un dc vide → `normalize_record` retournait `None` → record silencieusement écarté.
+- **Fix dans `ingest_record`** : fallback per-record vers `oai_dc` quand le préfixe configuré rend un payload vide. Coût : un appel HTTP supplémentaire **uniquement** pour les records autrement perdus. Compteur `fallback` ajouté aux stats par-source.
+- **Récupération** : UQAM 3 433 → **13 452** (+10 019 records), UQAC 3 450 → 3 470 (+20). Le record d'exemple `oai:archipel.uqam.ca:4005` (« Les pratiques des enseignants d'expérience en milieu socio-économiquement faible », Maude Jodoin, 2010) est désormais ingéré.
+- **Audit complet des 16 sources** : probé chaque source pour détecter le même bug. Résultat — seuls UQAM et UQAC affectés (uketd_dc); UQAR, UQAT, INRS sont propres (uketd_dc rempli partout); UQO false alarm (les premiers IDs sont des tombstones); UQTR re-harvesté pour confirmer (`fallback=0`, +7 records). Sources `dim` et `oai_etdms` utilisent un autre chemin de code et ne sont pas touchées.
+- **Comparaison OpenAlex** : confirmé que notre couverture des thèses québécoises est plus complète que OpenAlex sur tous les dépôts. UQAM Archipel n'est même pas indexé comme Source dans OpenAlex — les 13 452 records UQAM sont essentiellement uniques à notre projet dans l'écosystème open data.
+- **Corpus total** : 177 413 → **187 459** (+10 046).
+
 ## v0.7 — proposition (qualité + données)
 1. **3.6** Documentation interne (`docs/` schema DB, format JSONL Gemini)
 2. **2.7** Fallback PDF text extraction pour records sans abstract
