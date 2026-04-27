@@ -66,7 +66,9 @@ def test_dim_extracts_qualified_discipline():
     assert out["authoritative_discipline"] == "Computer Science"
     # dc.* elements project to DC shape
     assert out["dc"]["title"] == ["Une thèse"]
-    assert out["dc"]["contributor"] == ["Doe, Jane"]
+    # `contributor@author` is mapped onto `creator` (the canonical DC field
+    # for authors); other contributor qualifiers stay under `contributor`.
+    assert out["dc"]["creator"] == ["Doe, Jane"]
     # degree level surfaces as `type` so the type classifier sees it
     assert "Master's" in out["dc"]["type"]
 
@@ -83,6 +85,22 @@ def test_dim_handles_etd_schema_for_udem():
     out = parse_record(rec, "dim")
     assert out["authoritative_discipline"] == "Science politique"
     assert "Maîtrise" in out["dc"]["type"]
+
+
+def test_dim_separates_author_from_advisor():
+    """DSpace records have multiple contributor qualifiers — only `author`
+    should land in `creator`. Advisors and editors stay under `contributor`."""
+    rec = _wrap("""
+      <dim:dim xmlns:dim="http://www.dspace.org/xmlns/dspace/dim">
+        <dim:field mdschema="dc" element="title">Une thèse</dim:field>
+        <dim:field mdschema="dc" element="contributor" qualifier="author">Chahine, Karim</dim:field>
+        <dim:field mdschema="dc" element="contributor" qualifier="advisor">Pâquet, Martin</dim:field>
+        <dim:field mdschema="dc" element="type">Mémoire de maîtrise</dim:field>
+      </dim:dim>
+    """)
+    out = parse_record(rec, "dim")
+    assert out["dc"]["creator"] == ["Chahine, Karim"]
+    assert out["dc"]["contributor"] == ["Pâquet, Martin"]
 
 
 # ---------------------------------------------------------------- etdms --
