@@ -70,10 +70,15 @@ const TYPE_LABEL = { thesis: "Thèse", memoire: "Mémoire" };
 
 console.log("▸ Building Pagefind index");
 const t0 = performance.now();
-// `forceLanguage` accepts a string or is omitted entirely; passing `false`
-// fails the service handshake. We let Pagefind use the per-record language
-// hint we set on each addCustomRecord call.
-const { index } = await pagefind.createIndex({});
+// Force a single index across the whole corpus. Without this, Pagefind
+// splits records into per-language sub-indexes (the `language:` hint we
+// set on each record) and the JS frontend only loads the page's <html
+// lang="fr"> sub-index by default — leaving English-language records
+// (≈ 26 k, mostly Anglo institutions) invisible to the empty-query
+// default search until the user types something. We accept the loss of
+// English stemming (running/ran no longer fold) in exchange for a single
+// unified index that returns the full corpus on the splash page.
+const { index } = await pagefind.createIndex({ forceLanguage: "fr" });
 
 let added = 0;
 let errors = 0;
