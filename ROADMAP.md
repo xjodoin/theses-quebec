@@ -13,6 +13,20 @@ records, ×4), Polytechnique ajoutée, taxonomie 33 → 74 disciplines
 (sitemap + JSON-LD Dataset). 1,04 % records non classés (vs 28,6 %
 au prototype, 0,02 % avec LLM en v0.2).
 
+**v0.4 livrée le 27 avril 2026** — Cap totalement levé (×6.7 → **123 824
+records**) ; harvest incrémental + suppressions OAI honorées (25 993
+tombstones traités) ; toutes les sources passent à des prefixes riches
+(`dim` / `oai_etdms` / `uketd_dc`) qui exposent une discipline qualifiée
+par l'institution ; **3-pass classifier** avec attribution de provenance
+explicite (`auth` 60 % / `rule` 18 % / `rule_abstract` 6 % / `llm` 17 %).
+0,21 % records non classés. Couverture : 16 sources québécoises,
+toutes répondent (UQAM/TÉLUQ inclus).
+
+**v0.5 livrée le 27 avril 2026** — Migration **Pagefind** : MiniSearch
+(26 MB initial) → Pagefind chunks à la demande (~50 KB initial + 100-300 KB
+par requête). Abstracts re-indexés (1 500 chars). Stemming
+français + anglais natif. Excerpts surlignés natifs.
+
 **Légende**
 
 - **Effort** : `S` ≤ 4 h · `M` ½–2 jours · `L` une semaine et plus
@@ -43,8 +57,8 @@ au prototype, 0,02 % avec LLM en v0.2).
 
 | # | Amélioration | Effort | Valeur | Statut |
 |---|---|---|---|---|
-| 2.1 | **Lever le cap 500/source** — re-harvester sans `--max-per-source`. Estimation : ~50 000 records, DB ~250 MB. | S | ✶✶✶ | 🟡 v0.3 cap 2 000 (20 k records, 11 MB gz) |
-| 2.2 | **Migrer vers Pagefind** — à 50k records l'index MiniSearch dépasse 30 MB. Pagefind charge des chunks à la demande, ~100–500 KB par session. | M | ✶✶✶ | ⏳ v0.4 si nécessaire |
+| 2.1 | **Lever le cap 500/source** — re-harvester sans `--max-per-source`. Estimation : ~50 000 records, DB ~250 MB. | S | ✶✶✶ | ✅ v0.4 (cap totalement levé · 123 824 records) |
+| 2.2 | **Migrer vers Pagefind** — à 50k records l'index MiniSearch dépasse 30 MB. Pagefind charge des chunks à la demande, ~100–500 KB par session. | M | ✶✶✶ | ✅ v0.5 |
 | 2.3 | **Ajouter Érudit** — `oai.erudit.org`, couvre revues + thèses. Le déclencheur initial du projet. Investigué : OAI-PMH ne sert que des articles de revues (aucun set thèses, `dc:type=text`); les thèses Érudit sont fédérées depuis Papyrus/Savoirs UdeS/Archipel — déjà moissonnés directement. Voir notes dans `sources.yaml`. | M | ✶✶✶ | ✅ investigué |
 | 2.4 | **Étendre la taxonomie disciplinaire** — passer de 33 à 60+ catégories (sous-disciplines). Re-classifier en batch. | M | ✶✶ | ✅ v0.3 (74 disciplines, Érudit-aligned) |
 | 2.5 | **Re-classifier l'historique** quand `classify.py` évolue — bouton CLI `classify-existing`. | S | ✶✶ | ⏳ |
@@ -116,26 +130,34 @@ au prototype, 0,02 % avec LLM en v0.2).
 ---
 
 ## v0.2 — livrée ✅
+1.1 Vue détail · 1.2 Export citation · 1.3 Auteur cliquable · 1.4 Discipline cliquable · 1.5 Mode sombre · 1.6 Copier le lien · 2.3 Érudit (investigué) · 3.1 Tests Python (24)
 
-1. **1.1** Vue détail — ✅
-2. **1.2** Export citation — ✅
-3. **1.3** Auteur cliquable — ✅
-4. **1.4** Discipline cliquable — ✅
-5. **1.5** Mode sombre — ✅
-6. **1.6** Copier le lien — ✅
-7. **2.3** Érudit — ✅ investigué (n'expose que des articles, théses fédérées depuis dépôts déjà couverts)
-8. **3.1** Tests Python — ✅ 24 tests
+## v0.3 — livrée ✅ (saut quantitatif)
+2.1 partiel (cap 2000) · 2.4 Taxonomie 33→74 · 3.2 a11y FastAPI · 3.5 Sitemap+JSON-LD
 
-## v0.3 — proposition (saut quantitatif sur les données)
+## v0.4 — livrée ✅ (richesse + incrémental)
+- **2.1** Cap totalement levé : **123 824 records** (×6.7)
+- **Métadonnées riches** : 14/16 sources sur `dim` / `oai_etdms` / `uketd_dc` au lieu d'`oai_dc`
+- **Authoritative discipline** : 100 775 records avec discipline curée par l'institution
+- **3-pass classifier** : Pass 0 (auth) / Pass 1 (primary) / Pass 2 (abstract) avec provenance trackée
+- **Harvest incrémental** + tombstones honorés (25 993 suppressions)
+- 1.7 highlight, encore ⏳
 
-1. **2.1** Lever le cap 500/source → ~50 000 records
-2. **2.2** Migrer vers Pagefind (forcé par 2.1)
-3. **2.4** Étendre la taxonomie disciplinaire (33 → 60+)
-4. **3.2** Audit a11y
-5. **3.5** Sitemap + JSON-LD Dataset
+## v0.5 — livrée ✅ (scaling de la recherche)
+- **2.2** Migration Pagefind — bundle initial ÷500
+- Abstracts re-indexés (perdus en v0.3-v0.4 pour cause de taille)
+- Stemming français + anglais natif
 
-## v0.4 — propositions ouvertes
+## v0.6 — proposition (qualité + données)
+1. **3.2 partie 2** Backporter l'a11y sur `web/static.html` (Pagefind version)
+2. **5.2** « Did you mean? » sur 0 résultat
+3. **5.5** Graphique temporel (distribution annuelle par discipline)
+4. **3.6** Documentation interne (`docs/` schema DB, format JSONL Gemini)
+5. **2.7** Fallback PDF text extraction pour records sans abstract
+6. **1.7** Highlight diacritiques-aware
 
-- **2.6** Dépôts canadiens hors-Québec (rebrand `theses-canada`)
+## v0.7+ — propositions ouvertes
+- **2.6** Dépôts canadiens hors-Québec (rebrand `theses-canada`?)
 - **5.1** Recherche sémantique (embeddings)
 - **4.5** Dataset sur HuggingFace
+- **4.1** OAI-PMH ré-exposant le corpus enrichi
