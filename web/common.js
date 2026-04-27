@@ -381,9 +381,15 @@ export async function bootstrap(backend, options = {}) {
     // decades — horizontal bar chart, one row per decade, sorted chronologically.
     // Bar width is proportional to the largest decade in the current result
     // set; clicking a row toggles a year-range filter on that decade.
+    // Empty decades (n=0) are dropped so they don't clutter the chart when
+    // another filter is narrowing the result set — in particular, selecting
+    // a decade collapses the chart to just the active one.
     const decEl = $("#facet-decades");
     decEl.innerHTML = "";
-    const decades = (facets.decade || []).slice().sort((a, b) => a.value.localeCompare(b.value));
+    const decades = (facets.decade || [])
+      .filter(d => d.n > 0)
+      .slice()
+      .sort((a, b) => a.value.localeCompare(b.value));
     const maxN = decades.reduce((m, d) => Math.max(m, d.n), 0) || 1;
     for (const d of decades) {
       const start = parseInt(d.value, 10);
