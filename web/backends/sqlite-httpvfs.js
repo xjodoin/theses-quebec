@@ -129,12 +129,7 @@ export default {
     else if (useFts) orderSQL = "ORDER BY rank";
     else orderSQL = "ORDER BY t.rowid";
 
-    // sql.js binds JS numbers as REAL, but LIMIT/OFFSET require INTEGER and
-    // throw "datatype mismatch" on a REAL bound parameter. Both values are
-    // under our control (clamped, integer math), so inlining as literals
-    // is safe — no SQL injection surface.
-    const offset = Math.max(0, Math.floor((page - 1) * size));
-    const limitN = Math.max(1, Math.floor(size));
+    const offset = (page - 1) * size;
 
     // snippet() is FTS5's built-in highlight — we mirror Pagefind's <mark>
     // wrapping so the existing UI (which falls back to highlight() when
@@ -147,7 +142,7 @@ export default {
       `SELECT t.oai_identifier AS id, t.title, t.authors, t.advisors,
               t.abstract, t.year, t.type, t.source_id, t.source_name,
               t.discipline, t.url, ${excerptCol}
-       ${from} ${whereSQL} ${orderSQL} LIMIT ${limitN} OFFSET ${offset}`;
+       ${from} ${whereSQL} ${orderSQL} LIMIT ? OFFSET ?`;
     const countSQL = `SELECT COUNT(*) AS n ${from} ${whereSQL}`;
 
     // Facets re-run the filter (without FTS rank) for each grouping. We omit
@@ -183,7 +178,7 @@ export default {
     // Run the data + 4 aggregates in parallel — each one is its own series of
     // Range fetches but the worker will overlap them.
     const [rows, countRow, discRows, srcRows, decRows] = await Promise.all([
-      workerHandle.db.query(selectSQL, ...params),
+      workerHandle.db.query(selectSQL, ...params, size, offset),
       workerHandle.db.query(countSQL, ...params),
       workerHandle.db.query(
         `SELECT t.discipline AS v, COUNT(*) AS n ${from} ${fwDisc.sql}
