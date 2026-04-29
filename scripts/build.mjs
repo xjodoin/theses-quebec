@@ -87,6 +87,7 @@ console.log(`▸ Reading ${DB_PATH}`);
   if (ftsExists) {
     ftsRows = db.prepare("SELECT COUNT(*) AS n FROM theses_fts_idx").get().n;
   }
+  let needsVacuum = false;
   if (!ftsExists || ftsRows === 0) {
     console.log("  rebuilding FTS5 mirror (slim DB)");
     const t0 = performance.now();
@@ -95,8 +96,38 @@ console.log(`▸ Reading ${DB_PATH}`);
       "INSERT INTO theses_fts(rowid, title, authors, advisors, abstract, subjects) " +
       "SELECT rowid, title, authors, advisors, abstract, subjects FROM theses"
     );
-    db.exec("VACUUM");
+    needsVacuum = true;
     console.log(`  done in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+  }
+
+  // Backfill secondary indexes that may be missing on older DB snapshots
+  // (idx_theses_title_nocase was added after some releases shipped).
+  // CREATE INDEX IF NOT EXISTS is a no-op when the index already exists.
+  // Without idx_theses_title_nocase, ORDER BY title COLLATE NOCASE is a
+  // full-table scan — over HTTP Range that's the entire 622 MB DB pulled
+  // before the first row renders. We track whether we actually created any
+  // pages so the VACUUM at the end only fires when there's something to
+  // compact.
+  console.log("  ensuring sort indexes");
+  const idxT0 = performance.now();
+  const beforePages = db.prepare("PRAGMA page_count").get().page_count;
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_theses_year ON theses(year);
+    CREATE INDEX IF NOT EXISTS idx_theses_discipline ON theses(discipline);
+    CREATE INDEX IF NOT EXISTS idx_theses_source ON theses(source_id);
+    CREATE INDEX IF NOT EXISTS idx_theses_type ON theses(type);
+    CREATE INDEX IF NOT EXISTS idx_theses_title_nocase ON theses(title COLLATE NOCASE);
+  `);
+  const afterPages = db.prepare("PRAGMA page_count").get().page_count;
+  if (afterPages > beforePages) needsVacuum = true;
+  console.log(`  done in ${((performance.now() - idxT0) / 1000).toFixed(1)}s` +
+    (afterPages > beforePages ? ` (added ${afterPages - beforePages} pages)` : " (already present)"));
+
+  if (needsVacuum) {
+    console.log("  VACUUM");
+    const vT0 = performance.now();
+    db.exec("VACUUM");
+    console.log(`  done in ${((performance.now() - vT0) / 1000).toFixed(1)}s`);
   }
   const total = db.prepare("SELECT COUNT(*) AS n FROM theses").get().n;
   console.log(`  ${total.toLocaleString()} records`);
