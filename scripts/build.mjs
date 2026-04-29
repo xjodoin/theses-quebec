@@ -109,18 +109,32 @@ console.log(`▸ Reading ${DB_PATH}`);
   db.close();
 
   // ---------------------------------------------------------------- meta + assets --
+  // db_bytes is set after the copy below — declare meta first, fill in last.
   const meta = {
     built_at: new Date().toISOString(),
     total,
     sources,
     search_engine: "sqlite-httpvfs",
+    db_bytes: 0,  // overwritten below
   };
-  writeFileSync(resolve(DIST, "meta.json"), JSON.stringify(meta));
 
-  console.log(`▸ Copying DB to ${DB_DIR}/theses.db`);
-  copyFileSync(DB_PATH, resolve(DB_DIR, "theses.db"));
-  const dbSize = (statSync(resolve(DB_DIR, "theses.db")).size / 1024 / 1024).toFixed(1);
+  // We deploy the DB as a single chunk file (`theses.db.000`) and serve
+  // it via sql.js-httpvfs in **chunked** mode. The "full" mode triggers an
+  // initial length-probe GET that GitHub Pages auto-gzips (see issue:
+  // when Accept-Encoding includes gzip on a non-Range GET, Pages serves the
+  // whole compressed file and the worker's range/length detection fails
+  // with "Length of the file not known"). Chunked mode pulls the total
+  // size from config (`databaseLengthBytes`) so the probe is skipped, and
+  // every actual data read is a Range fetch — which Pages does honour
+  // correctly (no gzip applied to Range responses).
+  const chunkPath = resolve(DB_DIR, "theses.db.000");
+  console.log(`▸ Copying DB to ${chunkPath}`);
+  copyFileSync(DB_PATH, chunkPath);
+  const dbBytes = statSync(chunkPath).size;
+  const dbSize = (dbBytes / 1024 / 1024).toFixed(1);
   console.log(`  ${dbSize} MB`);
+  meta.db_bytes = dbBytes;
+  writeFileSync(resolve(DIST, "meta.json"), JSON.stringify(meta));
 
   console.log(`▸ Copying sql.js-httpvfs runtime`);
   for (const f of ["index.js", "sqlite.worker.js", "sql-wasm.wasm"]) {
