@@ -180,25 +180,29 @@ export default {
       ? `${fwDec.sql} AND t.year IS NOT NULL`
       : "WHERE t.year IS NOT NULL";
 
-    // Run the data + 4 aggregates in parallel — each one is its own series of
-    // Range fetches but the worker will overlap them.
+    // sql.js-httpvfs exposes db.query(sql, ...args) but internally calls
+    // sql.js's db.exec(sql, params), and sql.js's exec wants params as a
+    // single ARRAY. Spreading individually here means the params arg lands
+    // as a primitive instead of an array and bindings silently disappear
+    // (filters return 0 rows, FTS5 MATCH errors with "syntax error near """
+    // because it sees an empty operand). Always pass params as one array.
     const [rows, countRow, discRows, srcRows, decRows] = await Promise.all([
-      workerHandle.db.query(selectSQL, ...params),
-      workerHandle.db.query(countSQL, ...params),
+      workerHandle.db.query(selectSQL, params),
+      workerHandle.db.query(countSQL, params),
       workerHandle.db.query(
         `SELECT t.discipline AS v, COUNT(*) AS n ${from} ${fwDisc.sql}
          GROUP BY t.discipline ORDER BY n DESC`,
-        ...fwDisc.params,
+        fwDisc.params,
       ),
       workerHandle.db.query(
         `SELECT t.source_id AS v, t.source_name AS name, COUNT(*) AS n ${from} ${fwSrc.sql}
          GROUP BY t.source_id, t.source_name ORDER BY n DESC`,
-        ...fwSrc.params,
+        fwSrc.params,
       ),
       workerHandle.db.query(
         `SELECT (t.year/10*10) AS v, COUNT(*) AS n ${from} ${decWhere}
          GROUP BY (t.year/10*10) ORDER BY v`,
-        ...fwDec.params,
+        fwDec.params,
       ),
     ]);
 
