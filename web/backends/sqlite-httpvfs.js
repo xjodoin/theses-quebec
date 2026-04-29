@@ -97,18 +97,11 @@ export default {
           serverMode: "chunked",
           urlPrefix: abs("db/theses.db."),
           // Single-chunk layout: server chunk size == DB length. Range
-          // requests happen at requestChunkSize granularity; they all hit
-          // theses.db.000.
+          // requests still happen at requestChunkSize granularity (4 KB,
+          // matching SQLite's page size); they just all hit theses.db.000.
           serverChunkSize: meta.db_bytes,
           databaseLengthBytes: meta.db_bytes,
-          // 32 KB per HTTP Range request — 8× the SQLite page size. SQLite
-          // still reads pages at 4 KB internally, but the lazyFile layer
-          // only refills the cache 32 KB at a time, which collapses
-          // sequential page reads (FTS5 dictionary scans, B-tree walks)
-          // into one HTTP roundtrip instead of 8. For an FTS search on a
-          // cold cache (5–15 MB pulled), that's ~200 requests instead of
-          // ~1500, and Pages-edge RTT dominates that math.
-          requestChunkSize: 32768,
+          requestChunkSize: 4096,
           suffixLength: 3,
         },
       }],
