@@ -106,42 +106,6 @@ console.log(`▸ Reading ${DB_PATH}`);
     "FROM theses GROUP BY source_id, source_name ORDER BY n DESC"
   ).all();
 
-  // ---------------------------------------------------------------- empty-state cache --
-  // Pre-compute the result of the bootstrap "empty default" search so the
-  // first paint doesn't have to fire any SQL over HTTP Range. Without this,
-  // the cold-cache landing pulls 5–15 MB just to show 20 rows + facets
-  // (10–30 s on first visit). With this, meta.json carries the answer; SQL
-  // only fires when the user actually types or filters. Cost is ~30 KB of
-  // JSON gzipped to ~10 KB — invisible compared to the DB itself.
-  console.log("▸ Pre-computing empty-default state (initial render)");
-  const initialResults = db.prepare(
-    `SELECT t.oai_identifier AS id, t.title, t.authors, t.advisors,
-            t.abstract, t.year, t.type, t.source_id, t.source_name,
-            t.discipline, t.url
-       FROM theses t ORDER BY t.rowid LIMIT 20`
-  ).all().map(r => ({ ...r, excerpt: null }));
-
-  const initialFacets = {
-    discipline: db.prepare(
-      `SELECT t.discipline AS value, t.discipline AS label, COUNT(*) AS n
-         FROM theses t WHERE t.discipline IS NOT NULL
-         GROUP BY t.discipline ORDER BY n DESC`
-    ).all(),
-    source: db.prepare(
-      `SELECT t.source_id AS value, t.source_name AS label, COUNT(*) AS n
-         FROM theses t
-         GROUP BY t.source_id, t.source_name ORDER BY n DESC`
-    ).all(),
-    // The decade query returns 1980, 1990, etc.; the frontend expects the
-    // "1980s" label form (matching the value used in URL state), so format
-    // it once here.
-    decade: db.prepare(
-      `SELECT (t.year/10*10) AS y, COUNT(*) AS n
-         FROM theses t WHERE t.year IS NOT NULL
-         GROUP BY (t.year/10*10) ORDER BY y`
-    ).all().map(r => ({ value: `${r.y}s`, label: `${r.y}s`, n: r.n })),
-  };
-
   db.close();
 
   // ---------------------------------------------------------------- meta + assets --
@@ -152,11 +116,6 @@ console.log(`▸ Reading ${DB_PATH}`);
     sources,
     search_engine: "sqlite-httpvfs",
     db_bytes: 0,  // overwritten below
-    initial: {
-      total,
-      results: initialResults,
-      facets: initialFacets,
-    },
   };
 
   // We deploy the DB as a single chunk file (`theses.db.000`) and serve

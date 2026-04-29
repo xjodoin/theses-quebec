@@ -113,37 +113,6 @@ export default {
 
   async search(state) {
     const { q, sort, page, size } = state;
-
-    // Empty-default short-circuit: if the user hasn't typed a query, picked
-    // a filter, or paged past 1 — return the pre-computed bootstrap state
-    // baked into meta.json by build.mjs. Saves the cold-cache visitor 5–15
-    // MB of HTTP Range fetches on first paint (the empty-state SELECT +
-    // GROUP BYs would otherwise walk the rowid B-tree and 3 secondary
-    // indexes). Once they type or filter, we fall through to SQL like
-    // normal — that path now happens *behind* user intent, not on landing.
-    if (
-      meta?.initial &&
-      !q &&
-      !state.type &&
-      state.year_min == null &&
-      state.year_max == null &&
-      state.discipline.size === 0 &&
-      state.source.size === 0 &&
-      page === 1 &&
-      (sort === "relevance" || !sort)
-    ) {
-      const init = meta.initial;
-      return {
-        total: init.total,
-        results: init.results.slice(0, size).map(r => ({
-          ...r,
-          year: r.year != null ? Number(r.year) : null,
-          advisors: r.advisors || null,
-        })),
-        facets: init.facets,
-      };
-    }
-
     const fts = ftsQuery(q);
     const { where, params } = buildFilters(state);
 
