@@ -910,10 +910,88 @@ export async function bootstrap(backend, options = {}) {
     footerBuilt.textContent = `Index construit le ${d}.`;
   }
 
-  if ($("#splash")) $("#splash").style.display = "none";
+  // -------------------------------------------------- splash → first search
+  // The cold first search is the long one (5–15 MB of FTS5 dictionary +
+  // B-tree pages over HTTP Range, ~10–30 s on first visit). We keep the
+  // splash up THROUGH that search (not just init) and feed it live transport
+  // stats so the wait reads as deliberate progress. Returning visitors —
+  // detected via the localStorage tq:warm flag set after the first
+  // successful search — see "Reprise…" instead of the long-load copy and
+  // the splash dismisses immediately.
+  const splash = $("#splash");
+  const splashStats = $("#splash-stats");
+  const splashStatus = $("#splash-status");
+  const splashHint = $("#splash-hint");
+  const splashTagline = $("#splash-tagline");
+  const isWarm = localStorage.getItem("tq:warm") === "1";
+
+  if (splash && backend.hasSplash) {
+    if (isWarm) {
+      if (splashStatus) splashStatus.textContent = "Reprise de l'index local…";
+      if (splashTagline) splashTagline.textContent = "Bon retour 👋";
+    } else {
+      if (splashTagline) splashTagline.textContent = "Première visite : on prépare l'index dans votre navigateur";
+    }
+  }
+
   if ($("#q").disabled) $("#q").disabled = false;
   syncFormFromState();
+
+  // Rotating hints during the cold load — anchors the wait, gives the user
+  // something to read, and surfaces the "why is this slow" answer. Stats
+  // and hints run on every visit (not just first-time): the localStorage
+  // `tq:warm` flag tells us "user has searched here before" but the HTTP
+  // cache may still be cold (10 min max-age), so a returning user a day
+  // later still pulls 5–15 MB of FTS5 pages. Letting them see live progress
+  // is the right call regardless of warm flag.
+  let hintTimer = null;
+  if (splashHint) {
+    const HINTS = [
+      "Recherche 100 % locale dans votre navigateur — aucune requête serveur ensuite.",
+      "Une fois prêt, chaque recherche prend moins d'une seconde.",
+      "L'index est mis en cache : les visites suivantes seront instantanées.",
+      `${fmt(init.total)} thèses indexées · ${init.sources.length} dépôts moissonnés.`,
+      "Recherche full-text dans titres, résumés, sujets et directrices/eurs.",
+    ];
+    let i = 0;
+    const cycle = () => { if (splashHint) splashHint.textContent = HINTS[i++ % HINTS.length]; };
+    cycle();
+    hintTimer = setInterval(cycle, 3500);
+  }
+
+  // Poll worker stats while the first search is in flight. Fades the stats
+  // line in on the first non-zero reading so we don't flash "0.0 Mo" before
+  // the worker has issued any range requests yet.
+  let statsTimer = null;
+  if (splashStats && backend.getStats) {
+    let revealed = false;
+    statsTimer = setInterval(async () => {
+      const s = await backend.getStats();
+      if (!s) return;
+      const mb = (s.totalFetchedBytes / 1024 / 1024).toFixed(1);
+      splashStats.querySelector("[data-bytes]").textContent = mb;
+      splashStats.querySelector("[data-reqs]").textContent = String(s.totalRequests);
+      if (!revealed && s.totalFetchedBytes > 0) {
+        splashStats.classList.remove("opacity-0");
+        revealed = true;
+      }
+    }, 250);
+  }
+
   await runSearch();
+
+  if (statsTimer) clearInterval(statsTimer);
+  if (hintTimer) clearInterval(hintTimer);
+  if (splash) {
+    splash.classList.add("fading");
+    // Match the 500 ms transition from .splash-fading; remove from the flow
+    // after so it doesn't trap focus on the (now invisible) splash content.
+    setTimeout(() => { splash.style.display = "none"; }, 500);
+  }
+  // First successful search → mark this origin as warm so the next visit
+  // skips the long-form copy. The flag has no expiry; the browser cache
+  // eviction is the source of truth for whether the user is actually warm.
+  try { localStorage.setItem("tq:warm", "1"); } catch {}
 
   // ------------------------------------------------------- update banner --
   // The static site rebuilds whenever data/theses.db is updated. Long-lived
