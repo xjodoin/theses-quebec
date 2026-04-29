@@ -132,7 +132,7 @@ tailwind.config = {
     background-size: 1000px 100%;
   }
   /* progress bar for initial load */
-  .progress { width: 100%; height: 3px; background: #eef0f4; overflow: hidden; border-radius: 9999px; }
+  .progress { width: 100%; height: 3px; background: #eef0f4; overflow: hidden; }
   .dark .progress { background: #1a2238; }
   .progress > div {
     height: 100%; width: 30%;
@@ -140,60 +140,23 @@ tailwind.config = {
     animation: slide 1.2s infinite linear;
   }
   @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
-
-  /* Splash icon halo: low-amplitude pulse so the eye stays anchored on the
-     icon while text below mutates. Slower than .progress so the two animations
-     don't visually beat against each other. */
-  .splash-pulse {
-    animation: splash-pulse 2.4s ease-in-out infinite;
-  }
-  @keyframes splash-pulse {
-    0%, 100% { transform: scale(1); opacity: 0.6; }
-    50%      { transform: scale(1.18); opacity: 0; }
-  }
-  /* When the splash hides, fade out gracefully instead of cutting. */
-  #splash.fading { opacity: 0; pointer-events: none; }
 </style>
 </head>
 <body class="bg-ink-50 dark:bg-ink-900 text-ink-900 dark:text-ink-50 font-sans antialiased min-h-screen">
 
-<!-- ============== Initial loading splash ==============
-     Kept up until the first search completes (not just init), because the
-     FTS5 dictionary + B-tree pages get pulled lazily on the first MATCH —
-     5–15 MB over HTTP Range requests, ~10–30 s on a cold session. We feed
-     a live "MB · requests" counter from the worker so the long wait reads
-     as deliberate progress, not a frozen tab. Subsequent visits skip the
-     long copy via the localStorage `tq:warm` flag.
--->
-<div id="splash" class="fixed inset-0 grid place-items-center bg-ink-50 dark:bg-ink-900 z-50 transition-opacity duration-500">
-  <div class="text-center max-w-md px-8">
-    <div class="relative w-14 h-14 mx-auto mb-5">
-      <!-- Pulsing aura behind the icon — picks up the accent colour to
-           hint that something live is happening even on slow connections. -->
-      <div class="absolute inset-0 rounded-xl bg-accent-400/20 dark:bg-accent-400/15 splash-pulse"></div>
-      <div class="relative w-full h-full rounded-xl bg-ink-800 dark:bg-ink-700 grid place-items-center text-white shadow-card">
-        <svg viewBox="0 0 24 24" class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
-          <path d="M8 7h8M8 11h8" stroke-linecap="round"/>
-        </svg>
-      </div>
+<!-- ============== Initial loading splash ============== -->
+<div id="splash" class="fixed inset-0 grid place-items-center bg-ink-50 dark:bg-ink-900 z-50">
+  <div class="text-center max-w-sm px-8">
+    <div class="w-12 h-12 mx-auto rounded-lg bg-ink-800 dark:bg-ink-700 grid place-items-center text-white shadow-card mb-4">
+      <svg viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
+        <path d="M8 7h8M8 11h8" stroke-linecap="round"/>
+      </svg>
     </div>
-    <h1 class="font-serif text-2xl font-semibold mb-1 text-ink-900 dark:text-ink-50">Thèses du Québec</h1>
-    <p id="splash-tagline" class="text-sm text-ink-500 dark:text-ink-400 mb-5">Recherche unifiée dans 187k+ thèses québécoises</p>
-
-    <p id="splash-status" class="text-sm font-medium text-ink-700 dark:text-ink-200 mb-2">Préparation de l'index dans votre navigateur…</p>
+    <h1 class="font-serif text-xl font-semibold mb-1 text-ink-900 dark:text-ink-50">Thèses du Québec</h1>
+    <p id="splash-status" class="text-sm text-ink-500 dark:text-ink-400 mb-3">Téléchargement de l'index…</p>
     <div class="progress rounded-full"><div></div></div>
-
-    <!-- Live transport stats. Hidden until the first byte arrives so the
-         "0.0 MB · 0 requêtes" frame doesn't flash before the worker spins
-         up. Updated every 250 ms while the first query is in flight. -->
-    <div id="splash-stats" class="mt-3 text-xs text-ink-500 dark:text-ink-400 tabular-nums opacity-0 transition-opacity duration-300">
-      <span data-bytes>0.0</span> Mo téléchargés · <span data-reqs>0</span> requêtes
-    </div>
-
-    <!-- Rotating "did you know" line. Replaced every ~3 s while the cold
-         load runs; gives the user something to read instead of a spinner. -->
-    <p id="splash-hint" class="mt-5 text-xs text-ink-400 dark:text-ink-500 italic min-h-[2.5em]"></p>
+    <p class="mt-4 text-xs text-ink-400 dark:text-ink-500">Recherche 100 % locale dans ton navigateur — zéro requête serveur après ce chargement.</p>
   </div>
 </div>
 

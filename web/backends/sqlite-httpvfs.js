@@ -51,16 +51,6 @@ export default {
   label: "sqlite-httpvfs",
   hasSplash: true,
 
-  // Live transport stats from the worker. Used by the splash overlay to show
-  // a real "MB downloaded · N requests" counter during the cold-cache first
-  // search (the FTS5 dictionary + B-tree pages are fetched lazily on demand,
-  // so the first MATCH typically pulls 5–15 MB before returning anything).
-  async getStats() {
-    if (!workerHandle) return null;
-    try { return await workerHandle.worker.getStats(); }
-    catch { return null; }
-  },
-
   async init() {
     if (typeof window.createDbWorker !== "function") {
       throw new Error(
