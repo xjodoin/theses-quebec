@@ -14,6 +14,7 @@
  */
 
 let workerHandle = null;
+let workerPromise = null;     // started lazily; awaited only when SQL is needed
 let meta = null;
 const SOURCE_NAMES = new Map();
 
@@ -56,6 +57,9 @@ export default {
   // search (the FTS5 dictionary + B-tree pages are fetched lazily on demand,
   // so the first MATCH typically pulls 5–15 MB before returning anything).
   async getStats() {
+    // Don't force the worker to spin up just to poll stats — return null
+    // when it hasn't materialised yet. The splash polls this every 250 ms
+    // during the first SQL search; before that, there's nothing to report.
     if (!workerHandle) return null;
     try { return await workerHandle.worker.getStats(); }
     catch { return null; }
@@ -68,6 +72,17 @@ export default {
         "is included via a <script> tag before this module."
       );
     }
+    // We need db_bytes (the DB file size) for chunked-mode config and we
+    // need it now, but spinning up the SQLite worker (~5–10 s on first
+    // visit: WASM fetch + compile + DB header read) we DO NOT need now.
+    // The empty-default landing renders entirely from meta.json's `initial`
+    // block — no SQL fires until the user types or filters. Kicking off
+    // the worker in the background means init() resolves in a single fetch,
+    // the splash dismisses fast, and by the time the user types (a few
+    // seconds later) the worker is usually warm.
+    meta = await fetch("./meta.json").then(r => r.json());
+    for (const s of meta.sources) SOURCE_NAMES.set(s.id, s.name);
+
     // URLs must be absolute: the worker resolves relative URLs against its
     // own script location (./sqlite-httpvfs/sqlite.worker.js), so a relative
     // "./db/theses.db.000" would resolve to ".../sqlite-httpvfs/db/..." and
@@ -75,23 +90,15 @@ export default {
     const base = new URL(".", document.baseURI);
     const abs = (p) => new URL(p, base).href;
 
-    // We need db_bytes (the DB file size) to feed chunked-mode config, so
-    // meta.json has to load before createDbWorker. See scripts/build.mjs for
-    // why chunked mode + a single chunk file is the right configuration here
-    // (TL;DR: GitHub Pages gzips non-Range GETs and breaks "full" mode's
-    // initial length probe; chunked mode skips the probe).
-    meta = await fetch("./meta.json").then(r => r.json());
-    for (const s of meta.sources) SOURCE_NAMES.set(s.id, s.name);
-
-    workerHandle = await window.createDbWorker(
+    workerPromise = window.createDbWorker(
       [{
         from: "inline",
         config: {
           serverMode: "chunked",
           urlPrefix: abs("db/theses.db."),
-          // Single-chunk layout: server chunk size == DB length. The Range
+          // Single-chunk layout: server chunk size == DB length. Range
           // requests still happen at requestChunkSize granularity (4 KB,
-          // matching SQLite's page size), they just all hit `theses.db.000`.
+          // matching SQLite's page size); they just all hit theses.db.000.
           serverChunkSize: meta.db_bytes,
           databaseLengthBytes: meta.db_bytes,
           requestChunkSize: 4096,
@@ -102,13 +109,19 @@ export default {
       abs("sqlite-httpvfs/sql-wasm.wasm"),
       // 2 GB ceiling: well above any single-query reasonable read.
       2 * 1024 * 1024 * 1024,
-    );
+    ).then(w => { workerHandle = w; return w; });
 
     return {
       total: meta.total,
       sources: meta.sources,
       builtAt: meta.built_at,
     };
+  },
+
+  // Resolve the worker, awaiting its lazy startup if needed. Used by every
+  // SQL path (search() + getStats()).
+  async _worker() {
+    return workerHandle ?? await workerPromise;
   },
 
   async search(state) {
@@ -227,20 +240,26 @@ export default {
     // as a primitive instead of an array and bindings silently disappear
     // (filters return 0 rows, FTS5 MATCH errors with "syntax error near """
     // because it sees an empty operand). Always pass params as one array.
+    //
+    // _worker() awaits the lazy worker startup that init() kicked off in
+    // the background — this is where the user pays the WASM-compile +
+    // DB-header-fetch cost, gated behind their typed action rather than
+    // the first paint.
+    const w = await this._worker();
     const [rows, countRow, discRows, srcRows, decRows] = await Promise.all([
-      workerHandle.db.query(selectSQL, params),
-      workerHandle.db.query(countSQL, params),
-      workerHandle.db.query(
+      w.db.query(selectSQL, params),
+      w.db.query(countSQL, params),
+      w.db.query(
         `SELECT t.discipline AS v, COUNT(*) AS n ${from} ${fwDisc.sql}
          GROUP BY t.discipline ORDER BY n DESC`,
         fwDisc.params,
       ),
-      workerHandle.db.query(
+      w.db.query(
         `SELECT t.source_id AS v, t.source_name AS name, COUNT(*) AS n ${from} ${fwSrc.sql}
          GROUP BY t.source_id, t.source_name ORDER BY n DESC`,
         fwSrc.params,
       ),
-      workerHandle.db.query(
+      w.db.query(
         `SELECT (t.year/10*10) AS v, COUNT(*) AS n ${from} ${decWhere}
          GROUP BY (t.year/10*10) ORDER BY v`,
         fwDec.params,
