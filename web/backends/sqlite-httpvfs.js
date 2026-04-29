@@ -137,7 +137,10 @@ export default {
     // Empty-default short-circuit: if the user hasn't typed a query, picked
     // a filter, or paged past 1 — return the pre-computed bootstrap state
     // baked into meta.json by build.mjs. Saves the cold-cache visitor 5–15
-    // MB of HTTP Range fetches on first paint.
+    // MB of HTTP Range fetches on first paint (the empty-state SELECT +
+    // GROUP BYs would otherwise walk the rowid B-tree and 3 secondary
+    // indexes). Once they type or filter, we fall through to SQL like
+    // normal — that path now happens *behind* user intent, not on landing.
     if (
       meta?.initial &&
       !q &&
@@ -162,254 +165,147 @@ export default {
     }
 
     const fts = ftsQuery(q);
-    const useFts = fts.length > 0;
-    const w = await this._worker();
+    const { where, params } = buildFilters(state);
 
-    return useFts
-      ? searchFts(w, state, fts)
-      : searchIndexed(w, state);
+    // FTS5 MATCH goes into a separate clause + adds a JOIN on theses_fts.
+    // Without a query we read straight from the base table (and pay only the
+    // filter index lookups).
+    const useFts = fts.length > 0;
+    const from = useFts
+      ? "FROM theses_fts JOIN theses t ON t.rowid = theses_fts.rowid"
+      : "FROM theses t";
+    if (useFts) {
+      where.unshift("theses_fts MATCH ?");
+      params.unshift(fts);
+    }
+    const whereSQL = where.length ? "WHERE " + where.join(" AND ") : "";
+
+    // Order: relevance (FTS rank) when matching; otherwise by the user's
+    // pick. NULLS LAST keeps records with missing year off the front page on
+    // year sort.
+    let orderSQL;
+    if (sort === "year_desc") orderSQL = "ORDER BY t.year DESC NULLS LAST, t.rowid";
+    else if (sort === "year_asc") orderSQL = "ORDER BY t.year ASC NULLS LAST, t.rowid";
+    else if (sort === "title_asc") orderSQL = "ORDER BY t.title COLLATE NOCASE";
+    else if (useFts) orderSQL = "ORDER BY rank";
+    else orderSQL = "ORDER BY t.rowid";
+
+    // sql.js binds JS numbers as REAL, but LIMIT/OFFSET require INTEGER and
+    // throw "datatype mismatch" on a REAL bound parameter. Both values are
+    // under our control (clamped, integer math), so inlining as literals
+    // is safe — no SQL injection surface.
+    const offset = Math.max(0, Math.floor((page - 1) * size));
+    const limitN = Math.max(1, Math.floor(size));
+
+    // snippet() is FTS5's built-in highlight — we mirror Pagefind's <mark>
+    // wrapping so the existing UI (which falls back to highlight() when
+    // excerpt is null) can render either backend's output verbatim.
+    const excerptCol = useFts
+      ? "snippet(theses_fts, -1, '<mark>', '</mark>', '…', 30) AS excerpt"
+      : "NULL AS excerpt";
+
+    const selectSQL =
+      `SELECT t.oai_identifier AS id, t.title, t.authors, t.advisors,
+              t.abstract, t.year, t.type, t.source_id, t.source_name,
+              t.discipline, t.url, ${excerptCol}
+       ${from} ${whereSQL} ${orderSQL} LIMIT ${limitN} OFFSET ${offset}`;
+    const countSQL = `SELECT COUNT(*) AS n ${from} ${whereSQL}`;
+
+    // Facets re-run the filter (without FTS rank) for each grouping. We omit
+    // each facet's own dimension from its WHERE so the user sees all options
+    // even after picking one — same trick the FastAPI backend uses, but
+    // pushed into SQL via dedicated queries (cheaper than fetching all rows).
+    function facetWhere(exclude) {
+      const w = [];
+      const p = [];
+      if (useFts) { w.push("theses_fts MATCH ?"); p.push(fts); }
+      if (exclude !== "discipline" && state.discipline.size) {
+        w.push(`t.discipline IN (${[...state.discipline].map(() => "?").join(",")})`);
+        p.push(...state.discipline);
+      }
+      if (exclude !== "source" && state.source.size) {
+        w.push(`t.source_id IN (${[...state.source].map(() => "?").join(",")})`);
+        p.push(...state.source);
+      }
+      if (state.type) { w.push("t.type = ?"); p.push(state.type); }
+      if (state.year_min != null) { w.push("t.year >= ?"); p.push(state.year_min); }
+      if (state.year_max != null) { w.push("t.year <= ?"); p.push(state.year_max); }
+      return { sql: w.length ? "WHERE " + w.join(" AND ") : "", params: p };
+    }
+
+    const fwDisc = facetWhere("discipline");
+    const fwSrc = facetWhere("source");
+    const fwDec = facetWhere(null);
+    // Decade always wants `year IS NOT NULL` on top of the facet WHERE.
+    const decWhere = fwDec.sql
+      ? `${fwDec.sql} AND t.year IS NOT NULL`
+      : "WHERE t.year IS NOT NULL";
+
+    // sql.js-httpvfs exposes db.query(sql, ...args) but internally calls
+    // sql.js's db.exec(sql, params), and sql.js's exec wants params as a
+    // single ARRAY. Spreading individually here means the params arg lands
+    // as a primitive instead of an array and bindings silently disappear
+    // (filters return 0 rows, FTS5 MATCH errors with "syntax error near """
+    // because it sees an empty operand). Always pass params as one array.
+    //
+    // _worker() awaits the lazy worker startup that init() kicked off in
+    // the background — this is where the user pays the WASM-compile +
+    // DB-header-fetch cost, gated behind their typed action rather than
+    // the first paint.
+    const w = await this._worker();
+    const [rows, countRow, discRows, srcRows, decRows] = await Promise.all([
+      w.db.query(selectSQL, params),
+      w.db.query(countSQL, params),
+      w.db.query(
+        `SELECT t.discipline AS v, COUNT(*) AS n ${from} ${fwDisc.sql}
+         GROUP BY t.discipline ORDER BY n DESC`,
+        fwDisc.params,
+      ),
+      w.db.query(
+        `SELECT t.source_id AS v, t.source_name AS name, COUNT(*) AS n ${from} ${fwSrc.sql}
+         GROUP BY t.source_id, t.source_name ORDER BY n DESC`,
+        fwSrc.params,
+      ),
+      w.db.query(
+        `SELECT (t.year/10*10) AS v, COUNT(*) AS n ${from} ${decWhere}
+         GROUP BY (t.year/10*10) ORDER BY v`,
+        fwDec.params,
+      ),
+    ]);
+
+    const results = rows.map(r => ({
+      id: r.id,
+      title: r.title,
+      authors: r.authors,
+      advisors: r.advisors || null,
+      abstract: r.abstract,
+      year: r.year != null ? Number(r.year) : null,
+      type: r.type,
+      source_id: r.source_id,
+      source_name: r.source_name,
+      discipline: r.discipline,
+      url: r.url,
+      excerpt: r.excerpt || null,
+    }));
+
+    return {
+      total: countRow[0].n,
+      results,
+      facets: {
+        discipline: discRows
+          .filter(r => r.v)
+          .map(r => ({ value: r.v, label: r.v, n: r.n })),
+        source: srcRows
+          .filter(r => r.v)
+          .map(r => ({
+            value: r.v,
+            label: r.name || SOURCE_NAMES.get(r.v) || r.v,
+            n: r.n,
+          })),
+        decade: decRows
+          .filter(r => r.v != null)
+          .map(r => ({ value: `${r.v}s`, label: `${r.v}s`, n: r.n })),
+      },
+    };
   },
 };
-
-// ===== FTS path ===========================================================
-//
-// Why two queries (rows + meta) instead of five (rows + count + 3 facets):
-// sql.js holds a single SQLite handle, so Promise.all on multiple db.query
-// calls *queues* them in the worker — every query waits for the previous
-// one. Cold-cache "biodiversité" measured: rows 600 ms, COUNT 3000 ms
-// (4 MB of fetches just to count FTS matches via the JOIN), facets
-// ~70 ms each (warm from COUNT's page reads). 5 sequential queries.
-//
-// Collapsing the count + 3 GROUP BYs into one "fetch the facet columns for
-// every match" query and aggregating in JS gives us ONE worker round-trip
-// for everything-except-the-displayed-rows. For 700 matches × 4 cols ×
-// ~50 bytes = ~140 KB, ~5 chunked HTTP requests. Faster *and* it makes
-// the result-row query itself the head of the queue, so it lands first.
-async function searchFts(w, state, fts) {
-  const { sort, page, size } = state;
-  const { whereSQL, params } = ftsWhere(fts, state);
-  const orderSQL = pickOrderClause(sort, /* useFts */ true);
-  const offset = Math.max(0, Math.floor((page - 1) * size));
-  const limitN = Math.max(1, Math.floor(size));
-
-  const FROM = "FROM theses_fts JOIN theses t ON t.rowid = theses_fts.rowid";
-  const rowsSQL =
-    `SELECT t.oai_identifier AS id, t.title, t.authors, t.advisors,
-            t.abstract, t.year, t.type, t.source_id, t.source_name,
-            t.discipline, t.url,
-            snippet(theses_fts, -1, '<mark>', '</mark>', '…', 30) AS excerpt
-     ${FROM} ${whereSQL} ${orderSQL} LIMIT ${limitN} OFFSET ${offset}`;
-
-  // Facet meta query: only the columns we group on. Same WHERE as rows so
-  // total + facet counts reflect the user's full filter set. JS aggregates
-  // for total + the 3 facet histograms.
-  //
-  // To get "show all options on the dimension I'm currently filtering"
-  // semantics (so the user can switch their discipline pick), we drop the
-  // discipline+source filters from the meta query and re-apply them in JS
-  // per-facet. Every other filter (FTS, year, type) stays in SQL — those
-  // narrow the set the most and we don't want them in JS.
-  const { whereSQL: metaWhere, params: metaParams } = ftsWhere(fts, state, {
-    skipDiscipline: true, skipSource: true,
-  });
-  const metaSQL =
-    `SELECT t.discipline, t.source_id, t.source_name, t.year ${FROM} ${metaWhere}`;
-
-  const [rowsRaw, metaRaw] = await Promise.all([
-    w.db.query(rowsSQL, params),
-    w.db.query(metaSQL, metaParams),
-  ]);
-
-  const aggregated = aggregateFacets(metaRaw, state);
-  return {
-    total: aggregated.total,
-    results: rowsRaw.map(shapeRow),
-    facets: aggregated.facets,
-  };
-}
-
-// ===== Non-FTS path =======================================================
-//
-// Without an FTS query, our 4 secondary indexes (year, discipline, source,
-// type) make per-dimension GROUP BY queries fast: each is a covering-index
-// scan with no row fetches. The 5-query approach actually beats the
-// consolidated one here — the meta query without a narrowing FTS clause
-// could easily fetch most of the table.
-async function searchIndexed(w, state) {
-  const { sort, page, size } = state;
-  const { whereSQL, params } = baseFilters(state);
-  const orderSQL = pickOrderClause(sort, /* useFts */ false);
-  const offset = Math.max(0, Math.floor((page - 1) * size));
-  const limitN = Math.max(1, Math.floor(size));
-
-  const FROM = "FROM theses t";
-  const rowsSQL =
-    `SELECT t.oai_identifier AS id, t.title, t.authors, t.advisors,
-            t.abstract, t.year, t.type, t.source_id, t.source_name,
-            t.discipline, t.url, NULL AS excerpt
-     ${FROM} ${whereSQL} ${orderSQL} LIMIT ${limitN} OFFSET ${offset}`;
-  const countSQL = `SELECT COUNT(*) AS n ${FROM} ${whereSQL}`;
-
-  // Each facet query drops its own filter dimension so the user sees all
-  // options even after picking one.
-  const fwDisc = baseFilters(state, { skipDiscipline: true });
-  const fwSrc = baseFilters(state, { skipSource: true });
-  const fwDec = baseFilters(state);
-  const decWhere = fwDec.whereSQL
-    ? `${fwDec.whereSQL} AND t.year IS NOT NULL`
-    : "WHERE t.year IS NOT NULL";
-
-  const [rowsRaw, countRow, discRows, srcRows, decRows] = await Promise.all([
-    w.db.query(rowsSQL, params),
-    w.db.query(countSQL, params),
-    w.db.query(
-      `SELECT t.discipline AS v, COUNT(*) AS n ${FROM} ${fwDisc.whereSQL}
-       GROUP BY t.discipline ORDER BY n DESC`,
-      fwDisc.params,
-    ),
-    w.db.query(
-      `SELECT t.source_id AS v, t.source_name AS name, COUNT(*) AS n ${FROM} ${fwSrc.whereSQL}
-       GROUP BY t.source_id, t.source_name ORDER BY n DESC`,
-      fwSrc.params,
-    ),
-    w.db.query(
-      `SELECT (t.year/10*10) AS v, COUNT(*) AS n ${FROM} ${decWhere}
-       GROUP BY (t.year/10*10) ORDER BY v`,
-      fwDec.params,
-    ),
-  ]);
-
-  return {
-    total: countRow[0].n,
-    results: rowsRaw.map(shapeRow),
-    facets: {
-      discipline: discRows.filter(r => r.v).map(r => ({ value: r.v, label: r.v, n: r.n })),
-      source: srcRows.filter(r => r.v).map(r => ({
-        value: r.v,
-        label: r.name || SOURCE_NAMES.get(r.v) || r.v,
-        n: r.n,
-      })),
-      decade: decRows.filter(r => r.v != null).map(r => ({
-        value: `${r.v}s`, label: `${r.v}s`, n: r.n,
-      })),
-    },
-  };
-}
-
-// ===== Helpers ============================================================
-
-function pickOrderClause(sort, useFts) {
-  if (sort === "year_desc") return "ORDER BY t.year DESC NULLS LAST, t.rowid";
-  if (sort === "year_asc")  return "ORDER BY t.year ASC NULLS LAST, t.rowid";
-  if (sort === "title_asc") return "ORDER BY t.title COLLATE NOCASE";
-  return useFts ? "ORDER BY rank" : "ORDER BY t.rowid";
-}
-
-// Build the WHERE+params for a query against the base table only (no FTS
-// JOIN). `opts.skipDiscipline` / `opts.skipSource` drop those filters for
-// per-facet exclusion semantics.
-function baseFilters(state, opts = {}) {
-  const w = [];
-  const p = [];
-  if (!opts.skipDiscipline && state.discipline.size) {
-    w.push(`t.discipline IN (${[...state.discipline].map(() => "?").join(",")})`);
-    p.push(...state.discipline);
-  }
-  if (!opts.skipSource && state.source.size) {
-    w.push(`t.source_id IN (${[...state.source].map(() => "?").join(",")})`);
-    p.push(...state.source);
-  }
-  if (state.type) { w.push("t.type = ?"); p.push(state.type); }
-  if (state.year_min != null) { w.push("t.year >= ?"); p.push(state.year_min); }
-  if (state.year_max != null) { w.push("t.year <= ?"); p.push(state.year_max); }
-  return { whereSQL: w.length ? "WHERE " + w.join(" AND ") : "", params: p };
-}
-
-// Same as baseFilters but with the FTS5 MATCH prepended.
-function ftsWhere(fts, state, opts = {}) {
-  const base = baseFilters(state, opts);
-  const where = ["theses_fts MATCH ?"];
-  if (base.whereSQL) where.push(base.whereSQL.replace(/^WHERE /, ""));
-  return { whereSQL: "WHERE " + where.join(" AND "), params: [fts, ...base.params] };
-}
-
-// JS-side aggregation for the FTS path. metaRows is one row per match
-// containing only (discipline, source_id, source_name, year) — the
-// dimensions we group on. We re-apply the discipline/source filters here
-// (they were skipped in SQL so the meta set covers all options for the
-// "switch your pick" UX). The decade facet always treats year IS NULL as
-// a non-bucket; the others fall through to "Autre / non classé"-equivalent
-// values via the .filter(r => r.v) call in the response shape.
-function aggregateFacets(metaRows, state) {
-  const wantDisc = state.discipline.size > 0
-    ? (d) => state.discipline.has(d) : null;
-  const wantSrc = state.source.size > 0
-    ? (s) => state.source.has(s) : null;
-
-  const discCounts = new Map();
-  const srcCounts = new Map();
-  const decCounts = new Map();
-  let total = 0;
-
-  for (const r of metaRows) {
-    // Total + decade respect ALL filters (incl. discipline/source).
-    const matchesDisc = !wantDisc || wantDisc(r.discipline);
-    const matchesSrc = !wantSrc || wantSrc(r.source_id);
-    const matchesAll = matchesDisc && matchesSrc;
-
-    if (matchesAll) {
-      total++;
-      if (r.year != null) {
-        const dec = Math.floor(r.year / 10) * 10;
-        decCounts.set(dec, (decCounts.get(dec) || 0) + 1);
-      }
-    }
-    // Discipline facet skips the discipline filter (so user sees all options).
-    if (matchesSrc && r.discipline) {
-      discCounts.set(r.discipline, (discCounts.get(r.discipline) || 0) + 1);
-    }
-    // Source facet skips the source filter.
-    if (matchesDisc && r.source_id) {
-      const key = r.source_id;
-      const entry = srcCounts.get(key) || { n: 0, name: r.source_name };
-      entry.n++;
-      srcCounts.set(key, entry);
-    }
-  }
-
-  return {
-    total,
-    facets: {
-      discipline: [...discCounts.entries()]
-        .map(([value, n]) => ({ value, label: value, n }))
-        .sort((a, b) => b.n - a.n),
-      source: [...srcCounts.entries()]
-        .map(([value, { n, name }]) => ({
-          value,
-          label: name || SOURCE_NAMES.get(value) || value,
-          n,
-        }))
-        .sort((a, b) => b.n - a.n),
-      decade: [...decCounts.entries()]
-        .map(([y, n]) => ({ value: `${y}s`, label: `${y}s`, n }))
-        .sort((a, b) => a.value.localeCompare(b.value)),
-    },
-  };
-}
-
-function shapeRow(r) {
-  return {
-    id: r.id,
-    title: r.title,
-    authors: r.authors,
-    advisors: r.advisors || null,
-    abstract: r.abstract,
-    year: r.year != null ? Number(r.year) : null,
-    type: r.type,
-    source_id: r.source_id,
-    source_name: r.source_name,
-    discipline: r.discipline,
-    url: r.url,
-    excerpt: r.excerpt || null,
-  };
-}
