@@ -58,6 +58,13 @@ export default {
         "is included via a <script> tag before this module."
       );
     }
+    // URLs must be absolute: the worker resolves relative URLs against its
+    // own script location (./sqlite-httpvfs/sqlite.worker.js), so a relative
+    // "./db/theses.db" would resolve to ".../sqlite-httpvfs/db/theses.db" and
+    // 404. Anchor everything to the document location.
+    const base = new URL(".", document.baseURI);
+    const abs = (p) => new URL(p, base).href;
+
     // The DB is ~700 MB. We pass a generous maxBytesToRead ceiling so the
     // worker doesn't abort if a query touches an unusually large index page;
     // it's a guardrail, not a target.
@@ -66,12 +73,12 @@ export default {
         from: "inline",
         config: {
           serverMode: "full",
-          url: "./db/theses.db",
+          url: abs("db/theses.db"),
           requestChunkSize: 4096,
         },
       }],
-      "./sqlite-httpvfs/sqlite.worker.js",
-      "./sqlite-httpvfs/sql-wasm.wasm",
+      abs("sqlite-httpvfs/sqlite.worker.js"),
+      abs("sqlite-httpvfs/sql-wasm.wasm"),
       // 2 GB ceiling: well above any single-query reasonable read.
       2 * 1024 * 1024 * 1024,
     );
