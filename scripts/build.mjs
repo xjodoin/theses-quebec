@@ -105,7 +105,9 @@ console.log(`▸ Reading ${DB_PATH}`);
   // CREATE INDEX IF NOT EXISTS is a no-op when the index already exists.
   // Without idx_theses_title_nocase, ORDER BY title COLLATE NOCASE is a
   // full-table scan — over HTTP Range that's the entire 622 MB DB pulled
-  // before the first row renders.
+  // before the first row renders. We track whether we actually created any
+  // pages so the VACUUM at the end only fires when there's something to
+  // compact.
   console.log("  ensuring sort indexes");
   const idxT0 = performance.now();
   const beforePages = db.prepare("PRAGMA page_count").get().page_count;
@@ -116,42 +118,10 @@ console.log(`▸ Reading ${DB_PATH}`);
     CREATE INDEX IF NOT EXISTS idx_theses_type ON theses(type);
     CREATE INDEX IF NOT EXISTS idx_theses_title_nocase ON theses(title COLLATE NOCASE);
   `);
-  console.log(`  done in ${((performance.now() - idxT0) / 1000).toFixed(1)}s`);
-
-  // theses_facets: a denormalized projection of just the facet/filter
-  // columns, keyed by rowid (same rowid as theses + theses_fts). For
-  // FTS+GROUP BY queries the planner does N random rowid lookups; in
-  // theses (rows ~4 KB each, one row per 4 KB page) every lookup hits a
-  // unique page = N HTTP Range fetches. theses_facets rows are ~50 bytes
-  // = ~80 rows per page, so 800 random rowids land on ~190 unique 32 KB
-  // chunks instead of 800. The whole table is ~10-15 MB; the win compounds
-  // as the result set grows (75%+ savings on 1.5k-match queries).
-  //
-  // Every facet/filter column lives here so the FTS path can compute
-  // count + 3 facets + filter checks without ever touching theses.
-  console.log("  building theses_facets (denormalized facet columns)");
-  const facT0 = performance.now();
-  db.exec(`
-    DROP TABLE IF EXISTS theses_facets;
-    CREATE TABLE theses_facets (
-      rowid INTEGER PRIMARY KEY,
-      discipline TEXT,
-      source_id TEXT,
-      source_name TEXT,
-      year INTEGER,
-      type TEXT
-    );
-    INSERT INTO theses_facets (rowid, discipline, source_id, source_name, year, type)
-      SELECT rowid, discipline, source_id, source_name, year, type FROM theses;
-    CREATE INDEX IF NOT EXISTS idx_theses_facets_discipline ON theses_facets(discipline);
-    CREATE INDEX IF NOT EXISTS idx_theses_facets_source ON theses_facets(source_id);
-    CREATE INDEX IF NOT EXISTS idx_theses_facets_year ON theses_facets(year);
-    CREATE INDEX IF NOT EXISTS idx_theses_facets_type ON theses_facets(type);
-  `);
-  needsVacuum = true;
   const afterPages = db.prepare("PRAGMA page_count").get().page_count;
-  const facetMb = ((afterPages - beforePages) * 4096 / 1024 / 1024).toFixed(1);
-  console.log(`  done in ${((performance.now() - facT0) / 1000).toFixed(1)}s (${facetMb} MB added)`);
+  if (afterPages > beforePages) needsVacuum = true;
+  console.log(`  done in ${((performance.now() - idxT0) / 1000).toFixed(1)}s` +
+    (afterPages > beforePages ? ` (added ${afterPages - beforePages} pages)` : " (already present)"));
 
   if (needsVacuum) {
     console.log("  VACUUM");
