@@ -261,7 +261,12 @@ def parse_uketd_dc(record):
         elif "uketdterms" in ns or "ethos" in ns or "ukoln" in ns:
             if local == "department" and auth_disc is None:
                 auth_disc = text
-            elif local in ("degreelevel", "qualificationname"):
+            elif local in ("degreelevel", "qualificationname",
+                           "qualificationlevel"):
+                # `qualificationlevel` ("doctoral" / "masters") is what ÉTS,
+                # INRS, UQO, UQAC populate; `qualificationname` ("phd",
+                # "engd") is set on doctoral records only at INRS/UQAC. Both
+                # contribute thesis-type signals to normalize._classify_type.
                 _add(fields, "type", text)
             elif local == "institution":
                 _add(fields, "publisher", text)

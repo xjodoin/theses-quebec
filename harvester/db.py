@@ -136,7 +136,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
 def connect(db_path: str) -> sqlite3.Connection:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    # WAL allows concurrent readers + one writer, but writers serialize on a
+    # single lock. Default Python sqlite3 timeout (5s) is too low when a slow
+    # harvester (McGill via Playwright/WAF) holds the writer while a parallel
+    # harvest also tries to upsert — bump to 60s so transient contention
+    # doesn't surface as "database is locked" record errors.
+    conn = sqlite3.connect(db_path, timeout=60)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     _migrate(conn)

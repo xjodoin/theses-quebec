@@ -468,12 +468,43 @@ tailwind.config = {
           <dd data-meta class="text-ink-700 dark:text-ink-100"></dd>
         </dl>
         <p data-abstract class="text-sm text-ink-700 dark:text-ink-200 leading-relaxed whitespace-pre-line"></p>
-        <div>
+        <div class="flex flex-wrap items-center gap-2">
           <a data-source-url target="_blank" rel="noopener"
              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium transition">
             Ouvrir la source
             <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17l10-10M9 7h8v8" stroke-linecap="round"/></svg>
           </a>
+          <div class="relative" data-report-wrap>
+            <button type="button" data-report-toggle aria-haspopup="menu" aria-expanded="false"
+                    class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-ink-200 dark:border-ink-700 text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-700 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-300">
+              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>
+              Signaler un problème
+            </button>
+            <div data-report-menu role="menu"
+                 class="hidden absolute z-10 mt-1 right-0 w-72 bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 rounded-md shadow-card-hover overflow-hidden text-sm">
+              <div class="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-400 dark:text-ink-500 border-b border-ink-100 dark:border-ink-700">Type de problème</div>
+              <button type="button" role="menuitem" data-report-kind="discipline"
+                      class="w-full text-left px-3 py-2 hover:bg-ink-50 dark:hover:bg-ink-700/60 text-ink-700 dark:text-ink-200">
+                <span class="block font-medium">Mauvaise discipline</span>
+                <span class="block text-xs text-ink-500 dark:text-ink-400">Le sujet ne correspond pas à la classification</span>
+              </button>
+              <button type="button" role="menuitem" data-report-kind="type"
+                      class="w-full text-left px-3 py-2 hover:bg-ink-50 dark:hover:bg-ink-700/60 text-ink-700 dark:text-ink-200">
+                <span class="block font-medium">Mauvais type</span>
+                <span class="block text-xs text-ink-500 dark:text-ink-400">Thèse vs mémoire incorrect</span>
+              </button>
+              <button type="button" role="menuitem" data-report-kind="metadata"
+                      class="w-full text-left px-3 py-2 hover:bg-ink-50 dark:hover:bg-ink-700/60 text-ink-700 dark:text-ink-200">
+                <span class="block font-medium">Métadonnées incorrectes</span>
+                <span class="block text-xs text-ink-500 dark:text-ink-400">Titre, auteur, résumé, année…</span>
+              </button>
+              <button type="button" role="menuitem" data-report-kind="other"
+                      class="w-full text-left px-3 py-2 hover:bg-ink-50 dark:hover:bg-ink-700/60 text-ink-700 dark:text-ink-200">
+                <span class="block font-medium">Autre</span>
+                <span class="block text-xs text-ink-500 dark:text-ink-400">Lien brisé, doublon, etc.</span>
+              </button>
+            </div>
+          </div>
         </div>
         <section class="border-t border-ink-100 dark:border-ink-700 pt-5">
           <h3 class="font-serif text-lg font-semibold text-ink-900 dark:text-ink-50 mb-3">Citer cette thèse</h3>

@@ -11,8 +11,9 @@
 #   - Some EPrints expose `oai_etdms` with explicit `etdms:discipline`
 #     (concordia, uqtr, rlibre, polymtl)
 #   - Other EPrints expose `uketd_dc` with `uketdterms:department`
-#     (uqam, uqac, uqar, uqo, uqat, inrs)
-#   - ÉTS exposes neither — stays on `oai_dc`
+#     (uqam, uqac, uqar, uqo, uqat, inrs, ets)
+#   - ÉTS exposes uketd_dc with `qualificationlevel` (doctoral/masters) —
+#     critical because dc:type collapses everything to "Mémoire ou thèse"
 
 - id: concordia
   name: Concordia University (Spectrum)
@@ -96,7 +97,7 @@
   short: ÉTS
   platform: eprints
   base_url: https://espace.etsmtl.ca/cgi/oai2
-  metadata_prefix: oai_dc
+  metadata_prefix: uketd_dc
 
 - id: rlibre
   name: TÉLUQ (R-Libre)

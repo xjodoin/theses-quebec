@@ -15,10 +15,30 @@ session, so we drive headless Chromium with Playwright:
 
 Endpoint discovered: /catalog/oai (Blacklight OAI provider).
 Useful set: DocumentType:Thesis (theses + dissertations only).
+
+Why oai_etdms (and how we work around its bug)
+----------------------------------------------
+McGill's `oai_dc` view collapses the degree to just `<dc:type>Thesis</dc:type>`
+— no master vs. doctoral distinction. That made every McGill record default
+to `type='thesis'` (PhD) when in fact the bulk are master's (mémoires).
+
+The `oai_etdms` view carries the right data (`<degree><name>`,
+`<degree><discipline>`, `<degree><grantor>`), but McGill's Blacklight provider
+aborts a `ListRecords` page with `cannotDisseminateFormat` whenever any one
+record in the page can't be serialized as ETDMS. Earlier this code fell back
+to oai_dc to avoid the issue; the cost was wholesale type misclassification.
+
+Workaround: when we hit `cannotDisseminateFormat`, we parse the resumption
+token's cursor offset (`oai_etdms.s(...).t(N):OFFSET`) and increment OFFSET
+by 1, retrying until we get records back. This pinpoints the bad record at
+the cost of skipping it (and any good records preceding it within the failed
+window). Lost records keep whatever data we already have in the DB from prior
+harvests.
 """
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
 from pathlib import Path
@@ -39,16 +59,17 @@ McGILL_SOURCE = {
     "platform": "blacklight",
     "base_url": "https://escholarship.mcgill.ca/catalog/oai",
     "set": "DocumentType:Thesis",
-    # McGill DOES expose oai_etdms (with the etdms-1-0 dash-namespace) and
-    # a `<degree><discipline>` field carrying source-curated department
-    # data — but at least one record in the Thesis set fails to serialize
-    # as etdms (cannotDisseminateFormat), and the OAI spec makes that an
-    # all-or-nothing per-request error. Sticking with oai_dc gets us every
-    # record; we lose the explicit discipline field for McGill but the
-    # classifier still has subjects+title+abstract to work with.
-    "metadata_prefix": "oai_dc",
+    "metadata_prefix": "oai_etdms",
     "home_url": "https://escholarship.mcgill.ca/",
 }
+
+# Resumption-token cursor: "<prefix>.s(...).f(...).u(...).t(<total>):<offset>"
+_TOKEN_OFFSET_RE = re.compile(r":(\d+)$")
+# Hard cap on consecutive offset bumps after a serialization error. Each
+# bump = one extra HTTP call; the worst case observed is one bad record per
+# 25-record page, so 50 is comfortably above the page size and prevents
+# runaway loops if McGill ever returns a long contiguous run of bad records.
+_MAX_SKIP_BUMPS = 50
 
 
 def _fetch_xml(page: Page, url: str, retries: int = 3) -> str:
@@ -79,6 +100,19 @@ def _fetch_xml(page: Page, url: str, retries: int = 3) -> str:
     raise RuntimeError(f"fetch failed after {retries} attempts: {last_exc}")
 
 
+def _bump_token_offset(token: str, by: int = 1) -> str | None:
+    """Increment the trailing `:N` cursor in a Blacklight resumption token.
+
+    Returns None if the token doesn't end in `:N`, in which case we can't
+    skip — caller should treat the error as fatal.
+    """
+    m = _TOKEN_OFFSET_RE.search(token)
+    if not m:
+        return None
+    new_offset = int(m.group(1)) + by
+    return _TOKEN_OFFSET_RE.sub(f":{new_offset}", token)
+
+
 def make_record_iter(page: Page):
     """Return a callable(source, max_records, from_date) -> Iterator[ET.Element]."""
     def _iter(source: dict, max_records: int | None,
@@ -91,6 +125,12 @@ def make_record_iter(page: Page):
         if from_date:
             url += f"&from={from_date}"
 
+        # Track the last token we sent so we can bump its offset if the
+        # current page errors with cannotDisseminateFormat. None means we're
+        # on the very first request, which has no token yet.
+        last_token: str | None = None
+        skipped_records = 0
+
         fetched = 0
         while True:
             xml = _fetch_xml(page, url)
@@ -101,7 +141,43 @@ def make_record_iter(page: Page):
                 code = err.get("code", "unknown")
                 if code == "noRecordsMatch":
                     return
-                raise RuntimeError(f"OAI error {code}: {err.text}")
+                # McGill aborts a ListRecords page when any record in it
+                # can't be serialized as ETDMS. Bump the cursor by 1 and
+                # retry — see the module docstring for context.
+                if code == "cannotDisseminateFormat" and last_token:
+                    bumped = last_token
+                    for _ in range(_MAX_SKIP_BUMPS):
+                        bumped = _bump_token_offset(bumped, 1)
+                        if bumped is None:
+                            break
+                        skipped_records += 1
+                        url = f"{base}?verb=ListRecords&resumptionToken={bumped}"
+                        time.sleep(0.3)
+                        retry_xml = _fetch_xml(page, url)
+                        retry_root = ET.fromstring(retry_xml)
+                        retry_err = retry_root.find("oai:error", NS)
+                        if retry_err is None:
+                            # Found a clean offset. Replay normal flow with
+                            # this response.
+                            xml = retry_xml
+                            root = retry_root
+                            last_token = bumped
+                            print(
+                                f"  ! skipped past serialization-error window "
+                                f"(total skipped: {skipped_records})",
+                                flush=True,
+                            )
+                            break
+                        if retry_err.get("code") == "noRecordsMatch":
+                            return
+                    else:
+                        raise RuntimeError(
+                            f"OAI error {code}: gave up after "
+                            f"{_MAX_SKIP_BUMPS} bumps from {last_token!r}"
+                        )
+                    err = root.find("oai:error", NS)
+                if err is not None:
+                    raise RuntimeError(f"OAI error {err.get('code')}: {err.text}")
 
             list_records = root.find("oai:ListRecords", NS)
             if list_records is None:
@@ -116,14 +192,14 @@ def make_record_iter(page: Page):
             token_el = list_records.find("oai:resumptionToken", NS)
             if token_el is None or not (token_el.text or "").strip():
                 return
-            token = token_el.text.strip()
-            url = f"{base}?verb=ListRecords&resumptionToken={token}"
+            last_token = token_el.text.strip()
+            url = f"{base}?verb=ListRecords&resumptionToken={last_token}"
             time.sleep(0.5)
     return _iter
 
 
 def harvest_mcgill(db_path: str, max_records: int | None,
-                   headless: bool = True) -> dict:
+                   headless: bool = True, full: bool = False) -> dict:
     conn = connect(db_path)
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=headless)
@@ -151,6 +227,7 @@ def harvest_mcgill(db_path: str, max_records: int | None,
                 McGILL_SOURCE, conn,
                 max_records=max_records,
                 record_iter=make_record_iter(page),
+                full=full,
             )
         finally:
             context.close()
@@ -164,9 +241,12 @@ def main() -> int:
     ap.add_argument("--max-records", type=int, default=None)
     ap.add_argument("--headed", action="store_true",
                     help="Show the browser window (useful for debugging WAF).")
+    ap.add_argument("--full", action="store_true",
+                    help="Force a full re-harvest, ignoring prior incremental state.")
     args = ap.parse_args()
 
-    stats = harvest_mcgill(args.db, args.max_records, headless=not args.headed)
+    stats = harvest_mcgill(args.db, args.max_records,
+                           headless=not args.headed, full=args.full)
     return 0 if stats["kept"] > 0 else 1
 
 
