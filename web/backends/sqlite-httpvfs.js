@@ -135,25 +135,7 @@ export default {
       abs("sqlite-httpvfs/sql-wasm.wasm"),
       // 2 GB ceiling: well above any single-query reasonable read.
       2 * 1024 * 1024 * 1024,
-    ).then(w => {
-      workerHandle = w;
-      // Background pre-warm: while the user is reading the empty-default
-      // landing, fire two no-op queries to load the FTS5 dictionary head
-      // pages + theses_facets B-tree interior pages. By the time they
-      // actually type, the heaviest cold-fetch costs are already paid,
-      // dropping a typical first-search from ~13 s to ~2-3 s.
-      //
-      // We DO NOT await this — workerPromise resolves the moment the
-      // worker is constructed, so a user who types instantly doesn't wait
-      // for warmup that hasn't started yet. They'll still queue behind the
-      // warmup query inside the worker (sql.js holds a single handle), but
-      // that's no worse than running their query cold.
-      Promise.all([
-        w.db.query("SELECT 1 FROM theses_fts WHERE theses_fts MATCH 'a*' LIMIT 1", []),
-        w.db.query("SELECT COUNT(*) FROM theses_facets WHERE rowid < 100", []),
-      ]).catch(() => { /* warmup is best-effort */ });
-      return w;
-    });
+    ).then(w => { workerHandle = w; return w; });
 
     return {
       total: meta.total,
