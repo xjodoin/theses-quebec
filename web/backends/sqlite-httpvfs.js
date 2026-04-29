@@ -60,32 +60,21 @@ export default {
     }
     // URLs must be absolute: the worker resolves relative URLs against its
     // own script location (./sqlite-httpvfs/sqlite.worker.js), so a relative
-    // "./db/theses.db.000" would resolve to ".../sqlite-httpvfs/db/..." and
+    // "./db/theses.db" would resolve to ".../sqlite-httpvfs/db/theses.db" and
     // 404. Anchor everything to the document location.
     const base = new URL(".", document.baseURI);
     const abs = (p) => new URL(p, base).href;
 
-    // We need db_bytes (the DB file size) to feed chunked-mode config, so
-    // meta.json has to load before createDbWorker. See scripts/build.mjs for
-    // why chunked mode + a single chunk file is the right configuration here
-    // (TL;DR: GitHub Pages gzips non-Range GETs and breaks "full" mode's
-    // initial length probe; chunked mode skips the probe).
-    meta = await fetch("./meta.json").then(r => r.json());
-    for (const s of meta.sources) SOURCE_NAMES.set(s.id, s.name);
-
+    // The DB is ~700 MB. We pass a generous maxBytesToRead ceiling so the
+    // worker doesn't abort if a query touches an unusually large index page;
+    // it's a guardrail, not a target.
     workerHandle = await window.createDbWorker(
       [{
         from: "inline",
         config: {
-          serverMode: "chunked",
-          urlPrefix: abs("db/theses.db."),
-          // Single-chunk layout: server chunk size == DB length. The Range
-          // requests still happen at requestChunkSize granularity (4 KB,
-          // matching SQLite's page size), they just all hit `theses.db.000`.
-          serverChunkSize: meta.db_bytes,
-          databaseLengthBytes: meta.db_bytes,
+          serverMode: "full",
+          url: abs("db/theses.db"),
           requestChunkSize: 4096,
-          suffixLength: 3,
         },
       }],
       abs("sqlite-httpvfs/sqlite.worker.js"),
@@ -93,6 +82,9 @@ export default {
       // 2 GB ceiling: well above any single-query reasonable read.
       2 * 1024 * 1024 * 1024,
     );
+
+    meta = await fetch("./meta.json").then(r => r.json());
+    for (const s of meta.sources) SOURCE_NAMES.set(s.id, s.name);
 
     return {
       total: meta.total,
