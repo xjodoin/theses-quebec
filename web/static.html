@@ -40,15 +40,15 @@
   "distribution": [
     {
       "@type": "DataDownload",
-      "encodingFormat": "application/json",
-      "contentUrl": "https://xjodoin.github.io/theses-quebec/pagefind/",
-      "name": "Search index (Pagefind chunks, loaded on demand)"
+      "encodingFormat": "application/x-sqlite3",
+      "contentUrl": "https://xjodoin.github.io/theses-quebec/db/theses.db",
+      "name": "Source SQLite database (queried in-browser via sql.js-httpvfs)"
     },
     {
       "@type": "DataDownload",
-      "encodingFormat": "application/x-sqlite3",
-      "contentUrl": "https://github.com/xjodoin/theses-quebec/raw/main/data/theses.db",
-      "name": "Source SQLite database (Git LFS)"
+      "encodingFormat": "application/zstd",
+      "contentUrl": "https://github.com/xjodoin/theses-quebec/releases/latest",
+      "name": "DB release archives (zstd-compressed snapshots)"
     }
   ],
   "isAccessibleForFree": true,
@@ -385,11 +385,11 @@ tailwind.config = {
           </li>
           <li>
             <a class="inline-flex items-center gap-2 hover:text-ink-900 dark:hover:text-ink-100 transition"
-               href="https://github.com/xjodoin/theses-quebec/raw/main/data/theses.db" target="_blank" rel="noopener">
+               href="https://github.com/xjodoin/theses-quebec/releases/latest" target="_blank" rel="noopener">
               <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              <span>Télécharger les données <code class="text-xs bg-ink-100 dark:bg-ink-700 dark:text-ink-100 px-1 rounded">theses.db</code></span>
+              <span>Télécharger les données <code class="text-xs bg-ink-100 dark:bg-ink-700 dark:text-ink-100 px-1 rounded">theses.db.zst</code></span>
             </a>
           </li>
           <li>
@@ -433,7 +433,7 @@ tailwind.config = {
         <a class="hover:text-ink-700 dark:hover:text-ink-200 underline"
            href="https://www.openarchives.org/pmh/" target="_blank" rel="noopener">OAI-PMH</a>,
         <a class="hover:text-ink-700 dark:hover:text-ink-200 underline"
-           href="https://pagefind.app/" target="_blank" rel="noopener">Pagefind</a>,
+           href="https://github.com/phiresky/sql.js-httpvfs" target="_blank" rel="noopener">sql.js-httpvfs</a>,
         <a class="hover:text-ink-700 dark:hover:text-ink-200 underline"
            href="https://tailwindcss.com/" target="_blank" rel="noopener">Tailwind CSS</a>.
         Hébergé sur
@@ -556,11 +556,12 @@ tailwind.config = {
 </template>
 
 
-<!-- Pagefind: a chunked, WASM-based search engine. The build at scripts/build.mjs
-     populates dist/pagefind/ alongside this HTML. -->
-<!-- Single source of truth: shared UI in web/common.js, backend selected here. -->
+<!-- sql.js-httpvfs: SQLite running in a Web Worker, fetching DB pages on
+     demand from /db/theses.db via HTTP Range requests. The UMD bundle puts
+     `createDbWorker` on `window`; the module below picks it up. -->
+<script src="./sqlite-httpvfs/index.js"></script>
 <script type="module">
-import backend from "./backends/pagefind.js";
+import backend from "./backends/sqlite-httpvfs.js";
 import { bootstrap } from "./common.js";
 bootstrap(backend);
 </script>
