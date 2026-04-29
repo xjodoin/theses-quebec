@@ -696,7 +696,8 @@ export async function bootstrap(backend, options = {}) {
     // Discipline + source labels are the most useful corrections; we also
     // sprinkle in tokens that appear inside multi-word labels so a typo in
     // "psychologie" still maps even when the full label is "Psychologie".
-    if (!vocabulary && response.facets) {
+    function maybeBuildVocabulary(facets) {
+      if (vocabulary || !facets) return;
       const fold = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
       const set = new Set();
       const harvest = (arr) => {
@@ -706,14 +707,48 @@ export async function bootstrap(backend, options = {}) {
           }
         }
       };
-      harvest(response.facets.discipline);
-      harvest(response.facets.source);
+      harvest(facets.discipline);
+      harvest(facets.source);
       if (set.size) vocabulary = [...set];
     }
 
     renderResults(response.results);
     renderPager(response.total, state.page, state.size);
-    renderFacets(response.facets);
+
+    // Lazy-facets path: backend returns rows/count immediately and resolves
+    // the 3 GROUP BYs in a separate phase so the user can see results
+    // *and start scrolling* before facets land. If facetsPromise is
+    // present, paint a skeleton sidebar now and rerender when it resolves.
+    // Stale-search guard: a newer search may finish before our facets
+    // arrive — bail in that case so we don't paint outdated counts.
+    if (response.facets) {
+      maybeBuildVocabulary(response.facets);
+      renderFacets(response.facets);
+    } else if (response.facetsPromise) {
+      renderFacetsSkeleton();
+      response.facetsPromise.then(facets => {
+        if (myToken !== lastSearchToken) return;
+        maybeBuildVocabulary(facets);
+        renderFacets(facets);
+      }).catch(err => {
+        console.error("facets failed:", err);
+      });
+    } else {
+      renderFacets({ discipline: [], source: [], decade: [] });
+    }
+  }
+
+  function renderFacetsSkeleton() {
+    const skel = (n) => {
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        out.push(`<div class="skeleton h-5 rounded my-1.5"></div>`);
+      }
+      return out.join("");
+    };
+    $("#facet-disciplines").innerHTML = skel(6);
+    $("#facet-sources").innerHTML = skel(5);
+    $("#facet-decades").innerHTML = skel(4);
   }
 
   // ---------------------------------------------------------- wiring -----

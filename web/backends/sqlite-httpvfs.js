@@ -18,14 +18,27 @@ let workerPromise = null;     // started lazily; awaited only when SQL is needed
 let meta = null;
 const SOURCE_NAMES = new Map();
 
-// Mirrors api/app.py:fts_query — quoted prefix tokens, AND-combined. Quoting
-// each token also keeps stray FTS5 operators (`AND`, `*`, `:`, parens) from
-// blowing up the parser when users paste raw text.
+// Quote tokens, AND-combine, prefix-match the LAST token only.
+//
+// Why only the last: prefix matching forces SQLite to scan a portion of
+// the FTS5 dictionary for every "x*" pattern. Measured cold cost on Pages:
+// "neuroplasticité*" → 1 s + 1 MB of fetches; "neuroplasticité" → 1 ms.
+// For multi-word queries we want the user's still-being-typed last word
+// to match prefixes ("appren" → "apprentissage"), but the earlier words
+// are typically complete and benefit from the 1000× speedup of exact-
+// matching. Quoting every token also keeps stray FTS5 operators (AND, *,
+// :, parens) from blowing up the parser when users paste raw text.
 const TOKEN_RE = /[\p{L}\p{N}\-]+/gu;
 function ftsQuery(raw) {
   if (!raw) return "";
   const tokens = (raw.match(TOKEN_RE) || []).filter(t => t.length >= 2);
-  return tokens.map(t => `"${t.replace(/"/g, '""')}"*`).join(" ");
+  if (tokens.length === 0) return "";
+  return tokens
+    .map((t, i) => {
+      const safe = `"${t.replace(/"/g, '""')}"`;
+      return i === tokens.length - 1 ? `${safe}*` : safe;
+    })
+    .join(" ");
 }
 
 // Build a parameterized WHERE for filter state. Keeps the SQL short by only
@@ -297,25 +310,19 @@ export default {
     // the background — this is where the user pays the WASM-compile +
     // DB-header-fetch cost, gated behind their typed action rather than
     // the first paint.
+    // Phase 1: rows + count first. These are what the user looks at.
+    // Phase 2: 3 facet GROUP BYs, returned via opts.onFacets when ready.
+    //
+    // The worker has a single SQLite handle, so all queries serialise on
+    // its queue. Splitting into phases means rows lands first (the page
+    // renders) and the user can already scroll/click while facets are
+    // still being computed in the background. Cold-cache "neuroplasticité"
+    // measured rows ~3 s, count ~0 ms (skip-JOIN), facets ~1.5 s — phase 1
+    // returns in ~3 s instead of ~5 s, even though total work is unchanged.
     const w = await this._worker();
-    const [rows, countRow, discRows, srcRows, decRows] = await Promise.all([
+    const [rows, countRow] = await Promise.all([
       w.db.query(selectSQL, params),
       w.db.query(countSQL, countParams),
-      w.db.query(
-        `SELECT f.discipline AS v, COUNT(*) AS n ${facetFrom} ${fwDisc.sql}
-         GROUP BY f.discipline ORDER BY n DESC`,
-        fwDisc.params,
-      ),
-      w.db.query(
-        `SELECT f.source_id AS v, f.source_name AS name, COUNT(*) AS n ${facetFrom} ${fwSrc.sql}
-         GROUP BY f.source_id, f.source_name ORDER BY n DESC`,
-        fwSrc.params,
-      ),
-      w.db.query(
-        `SELECT (f.year/10*10) AS v, COUNT(*) AS n ${facetFrom} ${decWhere}
-         GROUP BY (f.year/10*10) ORDER BY v`,
-        fwDec.params,
-      ),
     ]);
 
     const results = rows.map(r => ({
@@ -333,24 +340,43 @@ export default {
       excerpt: r.excerpt || null,
     }));
 
+    const facetsPromise = Promise.all([
+      w.db.query(
+        `SELECT f.discipline AS v, COUNT(*) AS n ${facetFrom} ${fwDisc.sql}
+         GROUP BY f.discipline ORDER BY n DESC`,
+        fwDisc.params,
+      ),
+      w.db.query(
+        `SELECT f.source_id AS v, f.source_name AS name, COUNT(*) AS n ${facetFrom} ${fwSrc.sql}
+         GROUP BY f.source_id, f.source_name ORDER BY n DESC`,
+        fwSrc.params,
+      ),
+      w.db.query(
+        `SELECT (f.year/10*10) AS v, COUNT(*) AS n ${facetFrom} ${decWhere}
+         GROUP BY (f.year/10*10) ORDER BY v`,
+        fwDec.params,
+      ),
+    ]).then(([discRows, srcRows, decRows]) => ({
+      discipline: discRows
+        .filter(r => r.v)
+        .map(r => ({ value: r.v, label: r.v, n: r.n })),
+      source: srcRows
+        .filter(r => r.v)
+        .map(r => ({
+          value: r.v,
+          label: r.name || SOURCE_NAMES.get(r.v) || r.v,
+          n: r.n,
+        })),
+      decade: decRows
+        .filter(r => r.v != null)
+        .map(r => ({ value: `${r.v}s`, label: `${r.v}s`, n: r.n })),
+    }));
+
     return {
       total: countRow[0].n,
       results,
-      facets: {
-        discipline: discRows
-          .filter(r => r.v)
-          .map(r => ({ value: r.v, label: r.v, n: r.n })),
-        source: srcRows
-          .filter(r => r.v)
-          .map(r => ({
-            value: r.v,
-            label: r.name || SOURCE_NAMES.get(r.v) || r.v,
-            n: r.n,
-          })),
-        decade: decRows
-          .filter(r => r.v != null)
-          .map(r => ({ value: `${r.v}s`, label: `${r.v}s`, n: r.n })),
-      },
+      facets: null,        // populated via facetsPromise when it resolves
+      facetsPromise,       // common.js awaits this and re-renders the sidebar
     };
   },
 };
