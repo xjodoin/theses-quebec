@@ -78,15 +78,30 @@ réutilise `harvest.harvest_source(source, conn, record_iter=...)`.
 
 ### Tests
 
-Aucun pour l'instant. Une suite ciblée sur `normalize.py` (extraction
-d'année, détection thèse/mémoire) et `classify.py` (mots-clés) serait
-bienvenue. `pytest` recommandé.
+Suite `pytest` (~75 tests) dans `tests/` couvrant `classify`, `normalize`,
+`parsers`, `db`. Lancer :
 
-### Dump statique pour Cloudflare Pages
+```bash
+.venv/bin/python -m pytest tests/ -q
+.venv/bin/python -m pytest tests/test_classify.py::test_didactique_beats_education -q   # un seul
+```
 
-Une issue ouverte propose de convertir le projet en version 100 % statique
-(SQLite → JSON, MiniSearch côté navigateur, GitHub Action pour le harvest).
-Si ça t'intéresse, prends-la.
+Quand tu modifies une règle de classification ou un parseur OAI, ajoute le
+cas dans `tests/test_classify.py` ou `tests/test_parsers.py`. Le smoke-test
+de classification tourne en CI à chaque push.
+
+### Distribution de la DB
+
+`data/theses.db` n'est plus dans le repo (anciennement LFS, abandonné en
+v0.6.3 — ça défonçait le quota gratuit). La DB pré-moissonnée vit comme
+asset GitHub Release :
+
+- **Récupérer** : `npm run db:fetch` (télécharge la dernière `db-YYYY-MM-DD`,
+  vérifie SHA-256, décompresse). Au premier `connect()` `harvester/db.py`
+  reconstruit l'index FTS5 (~8 s, transparent).
+- **Publier** une nouvelle version après un harvest : `npm run db:release`
+  (strip FTS5 + VACUUM + zstd -19 + `gh release create --latest`). Demande
+  `gh` authentifié et `zstd` installé.
 
 ## Workflow
 

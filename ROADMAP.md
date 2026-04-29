@@ -1,6 +1,6 @@
 # Feuille de route — theses-quebec
 
-État au 26 avril 2026. Document vivant : ouvre une PR pour proposer un
+État au 29 avril 2026. Document vivant : ouvre une PR pour proposer un
 ajout, ou réagis dans une issue pour discuter d'une priorité.
 
 **v0.2 livrée le 26 avril 2026** — Sprint 1 quasi complet (1.1 à 1.6),
@@ -108,7 +108,7 @@ backport). Click sur titre ouvre le modal détail (et non la source).
 | 5.3 | **Recherche par auteur fuzzy** — variantes nom/prénom (« Jodoin, M. » vs « Maude Jodoin »). | M | ✶✶ | ⏳ |
 | 5.4 | **Compare 2+ disciplines / décennies** — vue côte-à-côte, courbes temporelles. | M | ✶ | ⏳ |
 | 5.5 | **Graphique temporel** — distribution annuelle par discipline (chart.js / svg natif). | S | ✶✶ | ✅ v0.6 (par décennie) |
-| 5.6 | **Sauvegarder une recherche** — localStorage, retour facile à 5 dernières requêtes. | S | ✶ | ⏳ |
+| 5.6 | **Sauvegarder une recherche** — localStorage, retour facile aux dernières requêtes + recherches épinglées (« Mes recherches »). | S | ✶ | ✅ v0.6.2 |
 | 5.7 | **Détection de doublons** — même thèse archivée à plusieurs endroits (rare mais existe). | M | ✶ | ⏳ |
 
 ---
@@ -121,7 +121,7 @@ backport). Click sur titre ouvre le modal détail (et non la source).
 | 6.2 | **`deploy/systemd/` + `Caddyfile`** — recettes self-host VPS Linux. | S | ✶ | ⏳ |
 | 6.3 | **Monitoring de santé OAI** — page `/status` qui ping chaque endpoint chaque 6 h, affiche un status board. | M | ✶ | ⏳ |
 | 6.4 | **Export régulier sur archive.org** — preservation des snapshots de la DB. | S | ✶✶ | ⏳ |
-| 6.5 | **Mirroirs LFS alternatifs** — GitHub LFS a un quota. Backup vers R2 / S3. | M | ✶ | si besoin |
+| 6.5 | **Distribution DB hors LFS** — DB publiée comme asset GitHub Release (zstd). Le quota LFS gratuit (1 Go) ne tenait pas le rythme une fois la DB à 666 Mo. | S | ✶✶ | ✅ v0.6.3 |
 
 ---
 
@@ -187,11 +187,26 @@ backport). Click sur titre ouvre le modal détail (et non la source).
 - **Comparaison OpenAlex** : confirmé que notre couverture des thèses québécoises est plus complète que OpenAlex sur tous les dépôts. UQAM Archipel n'est même pas indexé comme Source dans OpenAlex — les 13 452 records UQAM sont essentiellement uniques à notre projet dans l'écosystème open data.
 - **Corpus total** : 177 413 → **187 459** (+10 046).
 
+## v0.6.3 — livrée ✅ (type-classification + distribution DB)
+- **Bug majeur — McGill 100 % mal classé** : McGill exposait `oai_dc` qui collapse le diplôme à `<dc:type>Thesis</dc:type>` sans distinction master/doctoral. 55 589 records → 98 % marqués `thesis` alors que la majorité sont des mémoires (les premiers 675 records échantillonnés : 672 master, 3 doctoral). McGill bascule vers `oai_etdms` qui expose `<degree><name>Doctor of Philosophy / Master of Engineering>` + `<degree><discipline>Department of …>`. Le provider Blacklight de McGill annule une page `ListRecords` entière sur `cannotDisseminateFormat` quand un seul record refuse la sérialisation ETDMS — workaround : `_bump_token_offset` parse le curseur `:OFFSET` du resumption token et incrémente d'1 jusqu'à passer la fenêtre fautive. **Résultat : 963 mem / 54 626 thes → 34 756 / 20 835**, et 81 % de McGill ont maintenant une discipline autoritative (vs 0 %).
+- **Bug parser — `qualificationlevel` ignoré** : `parse_uketd_dc` lisait `degreelevel` et `qualificationname` mais ratait `<uketdterms:qualificationlevel>` (la VRAIE source du `doctoral`/`masters` à ÉTS, INRS, UQO, UQAR, UQAT, UQAC). Combiné avec `dc:type="Thèse"` ou `"Mémoire ou thèse"` ambigu, ça produisait des classifications uniformément fausses : ÉTS = 100 % `memoire`, INRS = 100 % `thesis`, UQO = 100 % `thesis`. Fix dans `parsers.py` + ajout des tokens nus `"doctoral"`, `"masters"`, `"doctor of"` dans `DOCTORAL_TYPE_SIGNALS` / `MASTER_TYPE_SIGNALS` (`normalize.py`). ÉTS basculé `oai_dc` → `uketd_dc` dans `sources.yaml`.
+- **Splits redressés** après re-harvest `--full` :
+  - ÉTS : 3 397 mem / 0 thes → **2 285 / 1 112**
+  - INRS : 0 / 2 867 → **1 644 / 1 223**
+  - UQO : 0 / 1 108 → **665 / 443**
+  - UQAT : 844 / 218 → 680 / 382 (engd doctorats récupérés)
+  - UQAC : 2 917 / 553 → 2 768 / 704 (engd)
+  - 9 autres sources audités explicitement, classifications confirmées correctes
+- **DB → GitHub Releases** : la DB committée atteignait 666 Mo après les re-harvests, ce qui faisait sauter le quota Git LFS gratuit (1 Go) en 1-2 commits. Migration : `npm run db:release` → strip FTS5 + VACUUM (-34 %) → `zstd -19` (-83 %) → `gh release create db-YYYY-MM-DD --latest`. Wire size : **666 Mo → 76 Mo** (88 % de bande passante en moins par build Pages). `npm run db:fetch` télécharge + vérifie SHA-256 + décompresse ; `harvester/db.py` reconstruit FTS5 transparemment au premier `connect()` (~8 s). Workflow Pages déclenche maintenant sur `release: published`. Historique git réécrit (`git filter-repo`) pour purger les 4,3 Go de blobs LFS accumulés.
+- **Modal de signalement** : bouton "Signaler un problème" dans le modal détail → menu déroulant (mauvaise discipline / mauvais type / métadonnées / autre) → ouvre une issue GitHub pré-remplie avec l'identifiant OAI, le titre, le dépôt, le type/discipline actuels, et un template de saisie. Zéro backend (deep-link `github.com/issues/new`), fonctionne sur les deux variantes FastAPI et statique.
+- **Lock contention sqlite** : harvester `db.py` passe `timeout=60` sur la connexion (défaut Python = 5 s) — évite les `! record error: database is locked` quand un harvest concurrent attend l'écrivain.
+- **`CLAUDE.md`** ajouté à la racine pour donner aux instances Claude Code futures la mappe des 4 mondes de préfixes OAI, du skip-window McGill, et de la précédence du classifieur 3-pass.
+- **Corpus total** : 187 459 → **187 463**.
+
 ## v0.7 — proposition (qualité + données)
 1. **3.6** Documentation interne (`docs/` schema DB, format JSONL Gemini)
 2. **2.7** Fallback PDF text extraction pour records sans abstract
-3. **5.6** Sauvegarder les recherches récentes (localStorage)
-4. **3.3** i18n EN (toggle FR/EN)
+3. **3.3** i18n EN (toggle FR/EN)
 
 ## v0.8+ — propositions ouvertes
 - **2.6** Dépôts canadiens hors-Québec (rebrand `theses-canada`?)

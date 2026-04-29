@@ -9,10 +9,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](https://www.python.org/)
 [![Pages](https://img.shields.io/badge/demo-live-success)](https://xjodoin.github.io/theses-quebec/)
-[![Records](https://img.shields.io/badge/records-177%2C413-success)]()
+[![Records](https://img.shields.io/badge/records-187%2C463-success)]()
 [![Sources](https://img.shields.io/badge/sources-16%20d%C3%A9p%C3%B4ts-success)]()
 
-177 413 thèses et mémoires moissonnés depuis 16 dépôts institutionnels (Concordia,
+187 463 thèses et mémoires moissonnés depuis 16 dépôts institutionnels (Concordia,
 McGill, UdeM, Sherbrooke, Bishop's, Laval, Polytechnique, le réseau UQ, INRS, ÉTS,
 TÉLUQ), classés dans 74 disciplines canoniques (taxonomie alignée sur Érudit),
 indexés en plein texte avec facettes par université, type, année et discipline.
@@ -87,7 +87,9 @@ batch LLM.
                     └────────────┬────────────┘
                                  ▼
                     ┌─────────────────────────┐
-                    │   data/theses.db        │  SQLite + FTS5 (LFS)
+                    │   data/theses.db        │  SQLite + FTS5
+                    │   (GitHub Releases,     │  ~76 MB compressé
+                    │    asset zstd)          │  (~666 MB raw)
                     └────────────┬────────────┘
                                  ▼
               ┌──────────────────┴──────────────────┐
@@ -289,10 +291,13 @@ theses-quebec/
 │   └── static.html           Frontend pour la version statique (Pages)
 ├── scripts/
 │   ├── build.mjs             SQLite → Pagefind chunks → dist/
-│   └── serve.mjs             Serveur local de prévisualisation
+│   ├── serve.mjs             Serveur local de prévisualisation
+│   ├── fetch_db.mjs          gh release download → zstd -d → data/theses.db
+│   └── release_db.mjs        slim FTS5 + zstd → gh release create db-YYYY-MM-DD
 ├── tests/                    Suite pytest (75+ tests : classify, normalize, parsers, db)
 ├── data/
-│   └── theses.db             Base SQLite pré-moissonnée (LFS)
+│   └── theses.db             Base SQLite (récupérée via `npm run db:fetch`,
+│                             non versionnée — voir GitHub Releases)
 ├── .env.example              Template pour les secrets
 ├── package.json              Build pipeline statique
 ├── requirements.txt

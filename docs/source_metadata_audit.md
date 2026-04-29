@@ -1,20 +1,33 @@
-# OAI-PMH metadata audit (2026-04-25)
+# OAI-PMH metadata audit (2026-04-25, McGill + uketd_dc revisited 2026-04-29)
 
-Per-source comparison: what do our 15 sources expose beyond plain `oai_dc`?
+Per-source comparison: what do our 16 sources expose beyond plain `oai_dc`?
 Goal: identify sources where switching to a richer metadata prefix would give
-us an explicit, authoritative discipline / department value instead of relying
-on keyword-matching against generic `dc:subject`.
+us an explicit, authoritative discipline / department value AND a usable
+master/doctoral level signal — instead of relying on keyword-matching against
+generic `dc:subject` and an ambiguous `dc:type`.
 
-The current harvester (`harvester/harvest.py`) requests `metadataPrefix=oai_dc`
-for every source. From `oai_dc` we capture: `dc:title`, `dc:creator`,
-`dc:subject` (flattened, no qualifier), `dc:type`, `dc:date`, `dc:identifier`,
-`dc:relation`, `dc:description` (abstract), `dc:publisher`, `dc:language`. Any
-field that does not map onto one of those — and especially anything qualified
-or anything in a non-`dc` schema — is currently lost.
+From `oai_dc` we capture: `dc:title`, `dc:creator`, `dc:subject` (flattened,
+no qualifier), `dc:type`, `dc:date`, `dc:identifier`, `dc:relation`,
+`dc:description` (abstract), `dc:publisher`, `dc:language`. Any field that
+does not map onto one of those — and especially anything qualified or
+anything in a non-`dc` schema — is lost on this prefix.
 
-McGill (eScholarship) is intentionally not probed today: it sits behind an
-Azure WAF and needs a Playwright-based probe (handled by
-`harvester/mcgill_harvest.py`); a separate audit pass is required there.
+> **2026-04-29 update — type classification audit.** Beyond discipline, the
+> metadata prefix is also load-bearing for the thèse-vs-mémoire split (see
+> `harvester/normalize.py:_classify_type`). Several sources collapse the
+> degree level onto an ambiguous `<dc:type>`:
+>
+> - McGill (`oai_dc`): `<dc:type>Thesis</dc:type>` for everything → all 55k
+>   records were marked `thesis`. Switched to `oai_etdms`, which carries
+>   `<degree><name>Doctor of Philosophy / Master of Engineering>`. Result:
+>   34,756 mémoires / 20,835 thèses (ratio recovered).
+> - ÉTS (`oai_dc`): `<dc:type>Mémoire ou thèse</dc:type>` → all 3,397 records
+>   marked `memoire`. ÉTS does expose `uketd_dc` with
+>   `<uketdterms:qualificationlevel>doctoral|masters>` (the audit row below
+>   was wrong on this point). Switched.
+> - INRS / UQO / UQAR / UQAT / UQAC: dc:type is unhelpful; the level lives
+>   in `<uketdterms:qualificationlevel>` (parser was reading
+>   `degreelevel` and `qualificationname` only). Parser fixed.
 
 ## Summary table
 
@@ -32,14 +45,17 @@ Azure WAF and needs a Playwright-based probe (handled by
 | uqo | EPrints | `uketd_dc` | `uketdterms:department` (e.g. "Département des sciences de l'éducation") | **Yes** — department not in `oai_dc` | switch to `uketd_dc` |
 | uqat | EPrints | `uketd_dc` | `uketdterms:department` (e.g. "Sciences appliquées") | **Yes** — department not in `oai_dc` | switch to `uketd_dc` |
 | inrs | EPrints | `uketd_dc` | `uketdterms:department` (e.g. "Doctorat en études urbaines") | **Yes** — department not in `oai_dc` | switch to `uketd_dc` |
-| ets | EPrints | `uketd_dc` | **None** — neither department nor discipline is exposed by this repo | No | stay on `oai_dc` |
+| ets | EPrints | `uketd_dc` | `uketdterms:qualificationlevel` (`doctoral`/`masters`) — no department, but degree level is the critical signal here because `dc:type="Mémoire ou thèse"` is uniformly ambiguous | **Yes for type, not for discipline** — 2026-04-29 correction | switched to `uketd_dc` |
 | rlibre | EPrints | `oai_etdms` | `etd_ms:discipline` (e.g. "Informatique cognitive"); `uketd_dc` lacks department | **Yes** — discipline not in `oai_dc` | switch to `oai_etdms` |
 | polymtl | EPrints | `oai_etdms` | `etd_ms:discipline` (e.g. "Génie informatique") | **Yes** — discipline not in `oai_dc`; `uketd_dc` returns `cannotDisseminateFormat` here | switch to `oai_etdms` |
-| mcgill | Hyrax/Blacklight (WAF) | not probed today | unknown | unknown | requires Playwright-based probe |
+| mcgill | Hyrax/Blacklight (WAF) | `oai_etdms` | `<degree><discipline>` (e.g. "Department of Psychology") + `<degree><name>` (e.g. "Doctor of Philosophy") | **Yes** — `oai_dc` collapses everything to `<dc:type>Thesis</dc:type>` | switched to `oai_etdms` (with skip-window for `cannotDisseminateFormat`, see `mcgill_harvest.py`) |
 
-**Headline:** 14 of 15 OAI sources (everyone except ÉTS, with McGill TBD)
-expose an authoritative discipline or department field that `oai_dc` does NOT
-carry. ÉTS is the only repo where switching prefixes would buy nothing.
+**Headline (post-2026-04-29 update):** all 16 OAI sources are now on a
+prefix that exposes either authoritative discipline, degree level, or both.
+ÉTS doesn't surface discipline but does surface `qualificationlevel`, which
+is the load-bearing field there given the ambiguous dc:type. McGill, the
+last unknown in the original audit, was switched to `oai_etdms` and now has
+authoritative_discipline populated for 81 % of records (44k of 55k).
 
 ## Per-source detail
 
