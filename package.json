@@ -1,7 +1,7 @@
 {
   "name": "theses-quebec-static",
   "version": "0.1.0",
-  "description": "Static-site build pipeline: SQLite → in-browser sql.js-httpvfs → dist/",
+  "description": "Static-site build pipeline: SQLite → MiniSearch index → dist/",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "better-sqlite3": "^11.0.0",
-    "sql.js-httpvfs": "^0.8.12"
+    "minisearch": "^7.1.0",
+    "pagefind": "^1.5.2"
   }
 }

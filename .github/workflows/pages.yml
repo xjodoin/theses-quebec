@@ -33,7 +33,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -60,8 +60,13 @@ jobs:
         run: npm run db:fetch
 
       - name: Build static site
-        # Build is now I/O-bound on a single big DB copy (no per-record file
-        # writes), so default Node heap is plenty and the step takes <1 min.
+        # Pagefind's writeFiles holds the entire index in memory while serializing
+        # 187k+ records to ~840 MB of .pf_index chunks. Default Node heap (~4 GB
+        # on a 16 GB runner) sits right at the edge and the process was getting
+        # OOM-killed mid-write. Bump the old-space cap so the runner's headroom
+        # is what bounds us, not V8.
+        env:
+          NODE_OPTIONS: "--max-old-space-size=8192"
         run: npm run build
 
       - name: Setup Pages
