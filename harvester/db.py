@@ -44,12 +44,6 @@ CREATE INDEX IF NOT EXISTS idx_theses_year       ON theses(year);
 CREATE INDEX IF NOT EXISTS idx_theses_discipline ON theses(discipline);
 CREATE INDEX IF NOT EXISTS idx_theses_source     ON theses(source_id);
 CREATE INDEX IF NOT EXISTS idx_theses_type       ON theses(type);
--- Case-insensitive index on title to support `ORDER BY title COLLATE NOCASE`
--- (the static frontend's "Titre (A → Z)" sort) without a full-table scan.
--- Adds ~15-20 MB to the DB; saves the worst case in sql.js-httpvfs land,
--- where a full scan = 622 MB of HTTP Range fetches before the first row
--- appears.
-CREATE INDEX IF NOT EXISTS idx_theses_title_nocase ON theses(title COLLATE NOCASE);
 
 CREATE TABLE IF NOT EXISTS harvest_state (
     source_id              TEXT PRIMARY KEY,
