@@ -31,20 +31,26 @@ function ftsQuery(raw) {
 // Build a parameterized WHERE for filter state. Keeps the SQL short by only
 // emitting clauses for active filters; FTS5 MATCH is added by the caller
 // (only when a query is present).
-function buildFilters({ type, year_min, year_max, discipline, source }) {
+//
+// `tableAlias` lets the same builder produce clauses against either the
+// main `theses` table (alias `t`, used by the row-fetch query that needs
+// title/abstract/etc.) or `theses_facets` (alias `f`, used by COUNT and
+// the 3 GROUP BYs — much cheaper because rows are 80× denser).
+function buildFilters({ type, year_min, year_max, discipline, source }, tableAlias = "t") {
+  const a = tableAlias;
   const where = [];
   const params = [];
   if (discipline.size) {
-    where.push(`t.discipline IN (${[...discipline].map(() => "?").join(",")})`);
+    where.push(`${a}.discipline IN (${[...discipline].map(() => "?").join(",")})`);
     params.push(...discipline);
   }
   if (source.size) {
-    where.push(`t.source_id IN (${[...source].map(() => "?").join(",")})`);
+    where.push(`${a}.source_id IN (${[...source].map(() => "?").join(",")})`);
     params.push(...source);
   }
-  if (type) { where.push("t.type = ?"); params.push(type); }
-  if (year_min != null) { where.push("t.year >= ?"); params.push(year_min); }
-  if (year_max != null) { where.push("t.year <= ?"); params.push(year_max); }
+  if (type) { where.push(`${a}.type = ?`); params.push(type); }
+  if (year_min != null) { where.push(`${a}.year >= ?`); params.push(year_min); }
+  if (year_max != null) { where.push(`${a}.year <= ?`); params.push(year_max); }
   return { where, params };
 }
 
@@ -209,27 +215,59 @@ export default {
               t.abstract, t.year, t.type, t.source_id, t.source_name,
               t.discipline, t.url, ${excerptCol}
        ${from} ${whereSQL} ${orderSQL} LIMIT ${limitN} OFFSET ${offset}`;
-    const countSQL = `SELECT COUNT(*) AS n ${from} ${whereSQL}`;
 
-    // Facets re-run the filter (without FTS rank) for each grouping. We omit
-    // each facet's own dimension from its WHERE so the user sees all options
-    // even after picking one — same trick the FastAPI backend uses, but
-    // pushed into SQL via dedicated queries (cheaper than fetching all rows).
+    // Count: pick the cheapest path based on what filters apply.
+    //   - FTS-only (no base-table filters): COUNT FROM theses_fts directly.
+    //     FTS5 walks its posting lists internally, no row fetches.
+    //   - FTS + filters: JOIN theses_fts to theses_facets (NOT theses).
+    //     theses_facets has all the filter columns we need at ~50 bytes
+    //     per row instead of ~4 KB.
+    //   - No FTS: count from theses_facets with the same filters.
+    const noTableFilters = !state.type
+      && state.discipline.size === 0
+      && state.source.size === 0
+      && state.year_min == null
+      && state.year_max == null;
+    const facetFilters = buildFilters(state, "f");
+    const facetWhereForCount = facetFilters.where.length
+      ? "WHERE " + facetFilters.where.join(" AND ")
+      : "";
+    let countSQL, countParams;
+    if (useFts && noTableFilters) {
+      countSQL = "SELECT COUNT(*) AS n FROM theses_fts WHERE theses_fts MATCH ?";
+      countParams = [fts];
+    } else if (useFts) {
+      countSQL =
+        `SELECT COUNT(*) AS n FROM theses_fts JOIN theses_facets f ON f.rowid = theses_fts.rowid
+         WHERE theses_fts MATCH ? ${facetFilters.where.length ? "AND " + facetFilters.where.join(" AND ") : ""}`;
+      countParams = [fts, ...facetFilters.params];
+    } else {
+      countSQL = `SELECT COUNT(*) AS n FROM theses_facets f ${facetWhereForCount}`;
+      countParams = facetFilters.params;
+    }
+
+    // Facets run against theses_facets (alias `f`), NOT the main theses
+    // table — same shape, ~10 MB instead of 622 MB. With 32 KB chunks the
+    // small denser rows mean ~190 unique chunks for an 800-match query
+    // vs ~800 against theses (4× fewer HTTP fetches).
+    //
+    // We omit each facet's own dimension from its WHERE so the user sees
+    // all options even after picking one (mirrors api/app.py).
     function facetWhere(exclude) {
       const w = [];
       const p = [];
       if (useFts) { w.push("theses_fts MATCH ?"); p.push(fts); }
       if (exclude !== "discipline" && state.discipline.size) {
-        w.push(`t.discipline IN (${[...state.discipline].map(() => "?").join(",")})`);
+        w.push(`f.discipline IN (${[...state.discipline].map(() => "?").join(",")})`);
         p.push(...state.discipline);
       }
       if (exclude !== "source" && state.source.size) {
-        w.push(`t.source_id IN (${[...state.source].map(() => "?").join(",")})`);
+        w.push(`f.source_id IN (${[...state.source].map(() => "?").join(",")})`);
         p.push(...state.source);
       }
-      if (state.type) { w.push("t.type = ?"); p.push(state.type); }
-      if (state.year_min != null) { w.push("t.year >= ?"); p.push(state.year_min); }
-      if (state.year_max != null) { w.push("t.year <= ?"); p.push(state.year_max); }
+      if (state.type) { w.push("f.type = ?"); p.push(state.type); }
+      if (state.year_min != null) { w.push("f.year >= ?"); p.push(state.year_min); }
+      if (state.year_max != null) { w.push("f.year <= ?"); p.push(state.year_max); }
       return { sql: w.length ? "WHERE " + w.join(" AND ") : "", params: p };
     }
 
@@ -238,8 +276,15 @@ export default {
     const fwDec = facetWhere(null);
     // Decade always wants `year IS NOT NULL` on top of the facet WHERE.
     const decWhere = fwDec.sql
-      ? `${fwDec.sql} AND t.year IS NOT NULL`
-      : "WHERE t.year IS NOT NULL";
+      ? `${fwDec.sql} AND f.year IS NOT NULL`
+      : "WHERE f.year IS NOT NULL";
+
+    // FROM clause for facet queries: when an FTS query is present, JOIN
+    // theses_facets to theses_fts via rowid; otherwise scan theses_facets
+    // directly (the per-dimension indexes on theses_facets carry the load).
+    const facetFrom = useFts
+      ? "FROM theses_fts JOIN theses_facets f ON f.rowid = theses_fts.rowid"
+      : "FROM theses_facets f";
 
     // sql.js-httpvfs exposes db.query(sql, ...args) but internally calls
     // sql.js's db.exec(sql, params), and sql.js's exec wants params as a
@@ -255,20 +300,20 @@ export default {
     const w = await this._worker();
     const [rows, countRow, discRows, srcRows, decRows] = await Promise.all([
       w.db.query(selectSQL, params),
-      w.db.query(countSQL, params),
+      w.db.query(countSQL, countParams),
       w.db.query(
-        `SELECT t.discipline AS v, COUNT(*) AS n ${from} ${fwDisc.sql}
-         GROUP BY t.discipline ORDER BY n DESC`,
+        `SELECT f.discipline AS v, COUNT(*) AS n ${facetFrom} ${fwDisc.sql}
+         GROUP BY f.discipline ORDER BY n DESC`,
         fwDisc.params,
       ),
       w.db.query(
-        `SELECT t.source_id AS v, t.source_name AS name, COUNT(*) AS n ${from} ${fwSrc.sql}
-         GROUP BY t.source_id, t.source_name ORDER BY n DESC`,
+        `SELECT f.source_id AS v, f.source_name AS name, COUNT(*) AS n ${facetFrom} ${fwSrc.sql}
+         GROUP BY f.source_id, f.source_name ORDER BY n DESC`,
         fwSrc.params,
       ),
       w.db.query(
-        `SELECT (t.year/10*10) AS v, COUNT(*) AS n ${from} ${decWhere}
-         GROUP BY (t.year/10*10) ORDER BY v`,
+        `SELECT (f.year/10*10) AS v, COUNT(*) AS n ${facetFrom} ${decWhere}
+         GROUP BY (f.year/10*10) ORDER BY v`,
         fwDec.params,
       ),
     ]);
