@@ -79,6 +79,26 @@ END;
 """
 
 
+def slim_db(path: str) -> None:
+    """Drop the FTS5 mirror + triggers and VACUUM. Used before publishing
+    `data/theses.db` as a release asset, so the wire copy is ~34% smaller.
+    The next process that calls `connect()` rebuilds the FTS table
+    transparently from the base `theses` rows.
+    """
+    conn = sqlite3.connect(path, timeout=60)
+    try:
+        conn.execute("DROP TRIGGER IF EXISTS theses_ai")
+        conn.execute("DROP TRIGGER IF EXISTS theses_au")
+        conn.execute("DROP TRIGGER IF EXISTS theses_ad")
+        conn.execute("DROP TABLE IF EXISTS theses_fts")
+        conn.commit()
+        # VACUUM can't run inside a transaction; closing isolation is enough.
+        conn.isolation_level = None
+        conn.execute("VACUUM")
+    finally:
+        conn.close()
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     """Apply column additions for existing DBs that pre-date a schema bump.
 
@@ -132,6 +152,25 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "SELECT rowid, title, authors, advisors, abstract, subjects FROM theses"
         )
         conn.commit()
+
+    # Rebuild FTS5 if it's empty but the base table has rows. Triggered when
+    # opening a slim DB that was published without the mirror (`slim_db()`
+    # drops it before release; consumers see the SCHEMA's `CREATE VIRTUAL
+    # TABLE IF NOT EXISTS` create it fresh-and-empty here).
+    #
+    # Don't trust `SELECT COUNT(*) FROM theses_fts` here: for an external-
+    # content FTS5 table, COUNT proxies to the base table even when the
+    # index is empty. Check the shadow `theses_fts_idx` instead — it's
+    # empty if and only if no documents have been indexed yet.
+    base_count = conn.execute("SELECT COUNT(*) FROM theses").fetchone()[0]
+    if base_count:
+        idx_rows = conn.execute("SELECT COUNT(*) FROM theses_fts_idx").fetchone()[0]
+        if idx_rows == 0:
+            conn.execute(
+                "INSERT INTO theses_fts(rowid, title, authors, advisors, abstract, subjects) "
+                "SELECT rowid, title, authors, advisors, abstract, subjects FROM theses"
+            )
+            conn.commit()
 
 
 def connect(db_path: str) -> sqlite3.Connection:

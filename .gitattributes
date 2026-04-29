@@ -1,9 +1,8 @@
 # Git LFS — store large binaries outside main pack files.
-# Track the harvested SQLite DB so collaborators can clone & run without
-# re-harvesting from scratch (~5000 records, ~10 MB).
-*.db          filter=lfs diff=lfs merge=lfs -text
-*.db-wal      filter=lfs diff=lfs merge=lfs -text
-*.db-shm      filter=lfs diff=lfs merge=lfs -text
+# Note: data/theses.db is intentionally NOT LFS-tracked anymore. It's
+# published as a GitHub Release asset (zstd-compressed) — see
+# scripts/release_db.mjs. The earlier LFS approach hit the 1 GB free quota
+# too quickly (every commit version of the ~666 MB DB is kept forever).
 
 # Screenshots / images for the README and demo.
 *.png         filter=lfs diff=lfs merge=lfs -text

@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "serve": "node scripts/serve.mjs"
+    "serve": "node scripts/serve.mjs",
+    "db:fetch": "node scripts/fetch_db.mjs",
+    "db:release": "node scripts/release_db.mjs"
   },
   "devDependencies": {
     "better-sqlite3": "^11.0.0",

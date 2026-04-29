@@ -118,24 +118,31 @@ batch LLM.
 ## Démarrage rapide
 
 ```bash
-# 1. Cloner (avec LFS — la DB de 24 Mo se télécharge automatiquement)
-git lfs install                                  # une fois par machine
+# 1. Cloner
 git clone https://github.com/xjodoin/theses-quebec
 cd theses-quebec
 
 # 2. Installer
 python3 -m venv .venv                            # Python ≥ 3.10
 .venv/bin/pip install -r requirements.txt
+npm install                                      # pour npm run db:fetch
 
-# 3. Lancer l'API + le frontend (servi sur la même origine)
+# 3. Récupérer la DB pré-moissonnée (zstd, ~75 Mo) depuis la dernière
+#    release GitHub. L'index FTS5 sera reconstruit automatiquement au
+#    premier `connect()` (quelques secondes).
+npm run db:fetch
+
+# 4. Lancer l'API + le frontend (servi sur la même origine)
 .venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000
 
-# 4. Ouvrir
+# 5. Ouvrir
 open http://127.0.0.1:8000/
 ```
 
-La DB pré-moissonnée (`data/theses.db`) est versionnée via Git LFS — tu peux
-explorer immédiatement, sans dépendre de la disponibilité des serveurs OAI.
+La DB pré-moissonnée n'est plus versionnée dans le repo — elle est publiée
+comme **release GitHub** (asset zstd compressé, ~75 Mo). On évite ainsi de
+saturer le quota Git LFS (1 Go gratuit), et le clone reste léger (~5 Mo).
+Pour publier une nouvelle version après un harvest : `npm run db:release`.
 
 ---
 

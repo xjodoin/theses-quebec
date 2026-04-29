@@ -19,7 +19,7 @@
 
 import Database from "better-sqlite3";
 import * as pagefind from "pagefind";
-import { mkdirSync, writeFileSync, readFileSync, rmSync, copyFileSync, cpSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, rmSync, copyFileSync, cpSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
@@ -28,6 +28,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DB_PATH = resolve(ROOT, "data/theses.db");
 const DIST = resolve(ROOT, "dist");
 const PAGEFIND_DIR = resolve(DIST, "pagefind");
+
+// Auto-fetch the DB from the latest GitHub Release if it isn't on disk.
+// Lets `npm run build` work right after `git clone` without a separate
+// step. CI uses the same path. Skipped in dev when the DB is already there.
+if (!existsSync(DB_PATH)) {
+  console.log(`▸ ${DB_PATH} missing — fetching latest release`);
+  execSync("node scripts/fetch_db.mjs", { stdio: "inherit", cwd: ROOT });
+}
 
 mkdirSync(DIST, { recursive: true });
 rmSync(PAGEFIND_DIR, { recursive: true, force: true });

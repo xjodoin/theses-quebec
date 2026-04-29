@@ -8,9 +8,13 @@ __pycache__/
 *.pyc
 *.pyo
 
-# project scratch — *not* the harvested DB itself, which is tracked via LFS
+# project scratch
 data/llm_jobs/
 data/llm_preview.jsonl
+# The DB is now distributed via GitHub Releases (scripts/release_db.mjs
+# / scripts/fetch_db.mjs). Contributors run `npm run db:fetch` after
+# cloning instead of pulling it via LFS.
+data/theses.db
 data/theses.db-journal
 data/theses.db-wal
 data/theses.db-shm

@@ -2,20 +2,23 @@ name: Deploy to GitHub Pages
 
 # Construit le site statique (SQLite → Pagefind chunks → dist/) et le
 # déploie sur GitHub Pages. Se déclenche :
-#   - à chaque push sur main qui touche au code source ou à la DB
-#     (le harvest hebdomadaire commit la DB rafraîchie → redéploie)
+#   - à chaque push sur main qui touche au code source
+#   - à chaque release `db-*` publiée (le harvest hebdomadaire publie une
+#     nouvelle release → redéploie)
 #   - manuellement via l'onglet Actions
 
 on:
   push:
     branches: [main]
     paths:
-      - "data/theses.db"
       - "scripts/build.mjs"
+      - "scripts/fetch_db.mjs"
       - "web/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/pages.yml"
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -31,10 +34,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (avec LFS pour récupérer la DB)
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          lfs: true
           fetch-depth: 1
 
       - name: Setup Node
@@ -45,6 +47,16 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install zstd
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zstd
+
+      - name: Fetch DB from latest release
+        env:
+          # gh CLI is preinstalled on ubuntu-latest; GITHUB_TOKEN suffices
+          # for downloads from the same repo.
+          GH_TOKEN: ${{ github.token }}
+        run: npm run db:fetch
 
       - name: Build static site
         run: npm run build
