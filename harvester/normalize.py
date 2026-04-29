@@ -23,13 +23,16 @@ THESIS_TYPE_HINTS = (
 )
 
 DOCTORAL_TYPE_SIGNALS = (
-    "doctoral thesis", "doctorate", "doctorat",
+    "doctoral", "doctorate", "doctorat",
     "these de doctorat", "ph.d", "phd",
     "info:eu-repo/semantics/doctoralthesis",
+    # ETDMS degree.name values for doctorates
+    "doctor of",
 )
 
 MASTER_TYPE_SIGNALS = (
     "master thesis", "master's thesis", "masters thesis",
+    "masters",                  # bare uketd_dc qualificationlevel value
     "memoire de maitrise",
     "info:eu-repo/semantics/masterthesis",
     "m.a.", "m.sc", "m.eng", "m.ed",

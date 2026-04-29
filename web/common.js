@@ -530,9 +530,125 @@ export async function bootstrap(backend, options = {}) {
     if (!modal || modal.classList.contains("hidden")) return;
     modal.classList.add("hidden");
     document.body.classList.remove("overflow-hidden");
+    modal.dispatchEvent(new CustomEvent("modal:closed"));
     const lf = modal.dataset.lastFocus;
     if (lf) document.getElementById(lf)?.focus();
   }
+  // Build a pre-filled GitHub issue URL for a thesis classification/metadata
+  // problem. The static site has no backend, so report submission is just
+  // a deep-link into github.com/issues/new — readers stay anonymous unless
+  // they choose to sign in there. Title and body include the OAI identifier
+  // and a snapshot of the current values, so a maintainer can act on the
+  // report without needing to look the record up.
+  const REPO = "xjodoin/theses-quebec";
+  const REPORT_KINDS = {
+    discipline: {
+      title: "Mauvaise discipline",
+      prompt: "Indiquez la discipline qui conviendrait mieux et, si possible, "
+            + "pourquoi (mots-clés du résumé, programme d'origine, etc.).",
+      fields: [
+        "**Discipline suggérée** : ",
+        "**Justification** : ",
+      ],
+    },
+    type: {
+      title: "Mauvais type (thèse / mémoire)",
+      prompt: "Précisez s'il s'agit d'une thèse de doctorat, d'un mémoire de maîtrise, "
+            + "d'un essai, ou d'autre chose.",
+      fields: [
+        "**Type correct** : ",
+        "**Source de l'information** (page institutionnelle, programme, etc.) : ",
+      ],
+    },
+    metadata: {
+      title: "Métadonnées incorrectes",
+      prompt: "Indiquez le ou les champ(s) à corriger (titre, auteur·rice, "
+            + "année, résumé, direction, etc.) et la valeur correcte.",
+      fields: [
+        "**Champ concerné** : ",
+        "**Valeur actuelle** : ",
+        "**Valeur correcte** : ",
+      ],
+    },
+    other: {
+      title: "Autre problème",
+      prompt: "Décrivez le problème (lien brisé, doublon, doublon avec une autre fiche, etc.).",
+      fields: [
+        "**Description** : ",
+      ],
+    },
+  };
+
+  function reportIssueURL(record, kind) {
+    const k = REPORT_KINDS[kind] || REPORT_KINDS.other;
+    const ttype = record.type === "memoire" ? "Mémoire de maîtrise"
+                : record.type === "thesis"  ? "Thèse de doctorat"
+                : (record.type || "—");
+    const ctx = [
+      "<!-- Merci pour le signalement ! Les champs ci-dessous sont pré-remplis ;",
+      "     ne touchez pas le bloc « Fiche concernée », mais complétez la suite. -->",
+      "",
+      "## Fiche concernée",
+      "",
+      `- **Identifiant** : \`${record.id || record.oai_identifier || "?"}\``,
+      `- **Titre** : ${record.title || "(sans titre)"}`,
+      `- **Auteur·rice** : ${record.authors || "—"}`,
+      `- **Dépôt** : ${record.source_name || record.source_id || "—"}`,
+      `- **Année** : ${record.year || "—"}`,
+      `- **Type actuel** : ${ttype}`,
+      `- **Discipline actuelle** : ${record.discipline || "Non classé"}`,
+      record.url ? `- **URL source** : ${record.url}` : null,
+      "",
+      "## Détails du signalement",
+      "",
+      `> ${k.prompt}`,
+      "",
+      ...k.fields,
+      "",
+    ].filter(s => s !== null).join("\n");
+
+    const params = new URLSearchParams({
+      title: `[Signalement] ${k.title} — ${(record.title || "").slice(0, 80)}`,
+      body: ctx,
+      labels: "data-quality",
+    });
+    return `https://github.com/${REPO}/issues/new?${params}`;
+  }
+
+  function setupReportMenu(modal) {
+    const wrap = $("[data-report-wrap]", modal);
+    const toggle = $("[data-report-toggle]", modal);
+    const menu = $("[data-report-menu]", modal);
+    if (!wrap || !toggle || !menu) return;
+
+    const close = () => {
+      menu.classList.add("hidden");
+      toggle.setAttribute("aria-expanded", "false");
+      document.removeEventListener("click", onOutside, true);
+    };
+    const onOutside = (e) => {
+      if (!wrap.contains(e.target)) close();
+    };
+    toggle.addEventListener("click", () => {
+      const open = menu.classList.contains("hidden");
+      if (open) {
+        menu.classList.remove("hidden");
+        toggle.setAttribute("aria-expanded", "true");
+        setTimeout(() => document.addEventListener("click", onOutside, true), 0);
+      } else close();
+    });
+    $$("[data-report-kind]", menu).forEach(b => b.addEventListener("click", () => {
+      const r = modal._currentRecord;
+      if (!r) return;
+      const url = reportIssueURL(r, b.dataset.reportKind);
+      window.open(url, "_blank", "noopener,noreferrer");
+      close();
+    }));
+    // Close menu whenever the modal itself closes (keeps state clean across
+    // record switches).
+    modal.addEventListener("modal:closed", close);
+  }
+
   function buildCitation(r) {
     const modal = $("#detail-modal");
     const fmt = (localStorage.getItem("tq:cite-format") || "bibtex");
@@ -713,6 +829,7 @@ export async function bootstrap(backend, options = {}) {
         setTimeout(() => { copyLabel.textContent = orig; }, 1500);
       }
     });
+    setupReportMenu(detailModal);
   }
 
   // Mobile drawer
