@@ -10,10 +10,10 @@
  *   node scripts/deploy.mjs --tag pages-foo # custom tag
  *
  * Why split build from deploy:
- *   Pagefind's writeFiles emits 187k+ small fragment files into one
- *   directory; GitHub-hosted runners' shared disk stalls (~22 min, hits
- *   the job timeout). Local NVMe finishes in ~3 min. So we build local
- *   and the runner does only the cheap part: download + deploy.
+ *   The static search build emits many shard files and depends on the
+ *   release-hosted SQLite corpus. Local builds are faster and more
+ *   predictable, so the runner only downloads the prebuilt tarball and
+ *   deploys it.
  *
  * One-time repo setup:
  *   Settings → Pages → Source: "GitHub Actions"
@@ -102,7 +102,7 @@ try {
   // -C dist ".": pack dist's contents at archive root, no "dist/" prefix.
   // This matches the layout actions/upload-pages-artifact would produce,
   // so the workflow can rename to artifact.tar and feed deploy-pages
-  // directly without re-extracting 187k files.
+  // directly without extracting the static search shard tree on the runner.
   sh(`tar -czf "${archive}" -C "${DIST}" .`);
   console.log(`  → ${fileSize(archive)}`);
 

@@ -66,70 +66,114 @@ function quantile(values, q) {
   return sorted[idx];
 }
 
+function kb(bytes) {
+  return bytes / 1024;
+}
+
+function isSearchAsset(url) {
+  return url.includes("/backends/") || url.includes("/pagefind/") || url.includes("/tqsearch/");
+}
+
+function createNetworkMeter(page) {
+  let active = null;
+  const onResponse = (response) => {
+    if (!active || !isSearchAsset(response.url())) return;
+    active.requests++;
+    const headers = response.headers();
+    const len = Number(headers["content-length"] || 0);
+    if (Number.isFinite(len) && len > 0) active.transfer += len;
+  };
+  page.context().on("response", onResponse);
+  return {
+    async measure(fn) {
+      active = { requests: 0, transfer: 0 };
+      const value = await fn();
+      await page.waitForTimeout(50);
+      const stats = active;
+      active = null;
+      return { value, ...stats };
+    },
+    dispose() {
+      page.context().off("response", onResponse);
+    },
+  };
+}
+
 async function runBackend(page, engine, queries, runs, size) {
+  const meter = createNetworkMeter(page);
   const backendFile = `./backends/${engine}.js?perf=${Date.now()}`;
-  const initMs = await page.evaluate(async ({ backendFile }) => {
+  const init = await meter.measure(() => page.evaluate(async ({ backendFile }) => {
     const backend = (await import(backendFile)).default;
     const t0 = performance.now();
     await backend.init();
     window.__benchBackend = backend;
     return performance.now() - t0;
-  }, { backendFile });
+  }, { backendFile }));
 
   const rows = [];
-  for (const q of queries) {
-    const times = [];
-    let total = 0;
-    let firstTitle = "";
-    for (let i = 0; i < runs; i++) {
-      const result = await page.evaluate(async ({ q, size }) => {
-        performance.clearResourceTimings();
-        const t0 = performance.now();
-        const response = await window.__benchBackend.search({
-          q,
-          type: "",
-          year_min: null,
-          year_max: null,
-          sort: "relevance",
-          discipline: new Set(),
-          source: new Set(),
-          page: 1,
-          size,
-        });
-        const resources = performance.getEntriesByType("resource")
-          .filter(e => e.name.includes("/pagefind/") || e.name.includes("/tqsearch/"));
-        return {
-          ms: performance.now() - t0,
-          total: response.total,
-          firstTitle: response.results[0]?.title || "",
-          requests: resources.length,
-          transfer: resources.reduce((sum, r) => sum + (r.transferSize || r.encodedBodySize || 0), 0),
-        };
-      }, { q, size });
-      times.push(result.ms);
-      total = result.total;
-      firstTitle = result.firstTitle;
+  try {
+    for (const q of queries) {
+      const times = [];
+      const requests = [];
+      const transfers = [];
+      let total = 0;
+      let firstTitle = "";
+      for (let i = 0; i < runs; i++) {
+        const measured = await meter.measure(() => page.evaluate(async ({ q, size }) => {
+          const t0 = performance.now();
+          const response = await window.__benchBackend.search({
+            q,
+            type: "",
+            year_min: null,
+            year_max: null,
+            sort: "relevance",
+            discipline: new Set(),
+            source: new Set(),
+            page: 1,
+            size,
+          });
+          return {
+            ms: performance.now() - t0,
+            total: response.total,
+            firstTitle: response.results[0]?.title || "",
+          };
+        }, { q, size }));
+        const result = measured.value;
+        times.push(result.ms);
+        requests.push(measured.requests);
+        transfers.push(measured.transfer);
+        total = result.total;
+        firstTitle = result.firstTitle;
+      }
+      rows.push({
+        engine,
+        q,
+        initMs: init.value,
+        initRequests: init.requests,
+        initTransfer: init.transfer,
+        total,
+        firstMs: times[0],
+        firstRequests: requests[0],
+        firstTransfer: transfers[0],
+        medianMs: quantile(times, 0.5),
+        p95Ms: quantile(times, 0.95),
+        runs: times,
+        requests,
+        transfers,
+        firstTitle,
+      });
     }
-    rows.push({
-      engine,
-      q,
-      initMs,
-      total,
-      firstMs: times[0],
-      medianMs: quantile(times, 0.5),
-      p95Ms: quantile(times, 0.95),
-      runs: times,
-      firstTitle,
-    });
+  } finally {
+    meter.dispose();
   }
   return rows;
 }
 
 function printTable(rows) {
-  console.log("| Engine | Query | Total | First ms | Median ms | P95 ms |");
-  console.log("|---|---|---:|---:|---:|---:|");
+  console.log("| Engine | Query | Total | Init req | Init KB | First req | First KB | First ms | Median ms | P95 ms |");
+  console.log("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|");
   for (const r of rows) {
-    console.log(`| ${r.engine} | ${r.q || "(empty)"} | ${r.total.toLocaleString("fr-CA")} | ${r.firstMs.toFixed(0)} | ${r.medianMs.toFixed(0)} | ${r.p95Ms.toFixed(0)} |`);
+    console.log(`| ${r.engine} | ${r.q || "(empty)"} | ${r.total.toLocaleString("fr-CA")} | ${r.initRequests} | ${kb(r.initTransfer).toFixed(1)} | ${r.firstRequests} | ${kb(r.firstTransfer).toFixed(1)} | ${r.firstMs.toFixed(0)} | ${r.medianMs.toFixed(0)} | ${r.p95Ms.toFixed(0)} |`);
   }
 }
 
@@ -138,10 +182,11 @@ const browser = await launchBrowser();
 try {
   const allRows = [];
   for (const engine of args.engines) {
-    const page = await browser.newPage();
+    const context = await browser.newContext();
+    const page = await context.newPage();
     await page.goto(args.url, { waitUntil: "domcontentloaded" });
     allRows.push(...await runBackend(page, engine, args.queries, args.runs, args.size));
-    await page.close();
+    await context.close();
   }
   if (args.json) console.log(JSON.stringify(allRows, null, 2));
   else printTable(allRows);

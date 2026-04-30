@@ -556,7 +556,7 @@ tailwind.config = {
 </template>
 
 
-<!-- Static search backend. Use ?engine=pagefind to compare the Pagefind build. -->
+<!-- Static search backend. Bench builds can use ?engine=pagefind for comparison. -->
 <!-- Single source of truth: shared UI in web/common.js, backend selected here. -->
 <script type="module">
 const engine = new URLSearchParams(location.search).get("engine") === "pagefind"

@@ -11,9 +11,12 @@ runner tries the `chrome` channel, then `msedge`.
 
 ```bash
 npm install
-npm run build
+npm run build:bench
 PORT=5124 npm run serve
 ```
+
+`npm run build` is the production GitHub Pages build and ships `tqsearch` only.
+Use `npm run build:bench` when comparing against Pagefind.
 
 Leave the server running in one terminal and run benchmarks in another.
 
@@ -26,7 +29,7 @@ PLAYWRIGHT_EXECUTABLE_PATH=/path/to/chrome npm run bench:search:performance -- -
 
 ## Performance
 
-Default run, comparing `tqsearch` and Pagefind:
+Default run, comparing `tqsearch` and Pagefind from a `build:bench` artifact:
 
 ```bash
 npm run bench:search:performance -- --url=http://localhost:5124/
@@ -51,6 +54,10 @@ npm run bench:search:performance -- --url=http://localhost:5124/ --json
 
 The table reports:
 
+- `Init req` / `Init KB`: backend initialization requests and transfer size for
+  the static engine files loaded before the first query.
+- `First req` / `First KB`: requests and transfer size observed during the first
+  run for that query. This is the best proxy for cold shard/doc-chunk cost.
 - `First ms`: first observed run for that query in the browser session. This includes loading any term/doc chunks not already cached by previous queries.
 - `Median ms`: median across `--runs`.
 - `P95 ms`: high-percentile latency across `--runs`.
@@ -60,7 +67,8 @@ Run it multiple times if you want warm-cache behavior.
 
 ## Quality
 
-Default run, comparing `tqsearch` and Pagefind against SQLite FTS5:
+Default run, comparing `tqsearch` and Pagefind against SQLite FTS5 from a
+`build:bench` artifact:
 
 ```bash
 npm run bench:search:quality -- --url=http://localhost:5124/
@@ -94,15 +102,26 @@ JSON output to inspect disagreements before changing scoring.
 
 ## Recent Reference Run
 
-On the current prototype branch after adding numeric-token and title-shingle
-support:
+On the current prototype branch after switching `tqsearch` to BM25F-style
+impact scoring, file-backed index construction, binary term shards, and smaller
+document payload chunks:
 
 ```text
-tqsearch known item: Hit@1 83.3%, Hit@3 94.0%, Hit@10 96.0%, MRR@10 0.882
-SQLite known item:   Hit@1 90.7%, Hit@3 97.3%, Hit@10 98.0%, MRR@10 0.940
-tqsearch vs SQLite known-item Overlap@10: 84.8%
-tqsearch vs SQLite topical Overlap@10:    31.6%
+tqsearch known item: Hit@1 97.3%, Hit@3 99.3%, Hit@10 99.3%, MRR@10 0.983
+SQLite known item:   Hit@1 94.0%, Hit@3 99.3%, Hit@10 99.3%, MRR@10 0.963
+Pagefind known item: Hit@1 90.7%, Hit@3 97.3%, Hit@10 97.3%, MRR@10 0.939
+
+tqsearch vs SQLite known-item Overlap@10: 88.1%
+tqsearch vs SQLite topical Overlap@10:    38.5%
+Pagefind vs SQLite topical Overlap@10:    19.0%
 ```
 
-That means `tqsearch` is close to SQLite for known-item retrieval, but it does
-not mimic SQLite ranking for broad topical queries.
+The same build kept `tqsearch` warm-query medians around 0-5 ms for the default
+query set. `tqsearch` initialized with 6 search-asset requests / 796.7 KB, and
+first-query shard/doc fetches for the default non-empty queries ranged from
+5-12 requests / 292.1-2195.5 KB / 24-47 ms. Pagefind initialized with 9
+requests / 2069.7 KB; its first-query network shape ranged from 10-15 requests /
+52.8-1911.8 KB / 223-4381 ms.
+
+The implementation notes for the standalone static engine are in
+[`docs/static-search-design.md`](static-search-design.md).

@@ -8,22 +8,51 @@
  */
 
 import Database from "better-sqlite3";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
+import { createInterface } from "node:readline";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DB_PATH = resolve(ROOT, "data/theses.db");
 const OUT = resolve(ROOT, "dist/tqsearch");
 const DOCS_OUT = resolve(OUT, "docs");
 const TERMS_OUT = resolve(OUT, "terms");
+const WORK_OUT = resolve(OUT, "_build");
+const RUNS_OUT = resolve(WORK_OUT, "runs");
 
-const ABSTRACT_LIMIT = 900;
-const DOC_CHUNK_SIZE = 1000;
+const ABSTRACT_DISPLAY_LIMIT = 900;
+const ABSTRACT_INDEX_LIMIT = 1200;
+const DOC_CHUNK_SIZE = 100;
 const INITIAL_RESULT_LIMIT = 50;
 const MAX_TERMS_PER_DOC = 140;
 const MIN_TOKEN_LENGTH = 2;
+const BM25F_K1 = 1.2;
+const TITLE_SHINGLE_WEIGHT = 10;
+const POSTING_FLUSH_LINES = 100000;
+const TERM_SHARD_FORMAT = "tqsbin-v1";
+const TERM_SHARD_MAGIC = [0x54, 0x51, 0x53, 0x42]; // TQSB
+const textEncoder = new TextEncoder();
+
+const FIELDS = [
+  { name: "title", weight: 4.5, b: 0.2, get: r => r.title },
+  { name: "authors", weight: 3.0, b: 0.0, get: r => r.authors },
+  { name: "advisors", weight: 2.4, b: 0.0, get: r => r.advisors },
+  { name: "subjects", weight: 2.2, b: 0.35, get: r => r.subjects },
+  { name: "discipline", weight: 1.8, b: 0.0, get: r => r.discipline },
+  { name: "abstract", weight: 1.0, b: 0.75, get: r => indexAbstract(r) },
+  { name: "source", weight: 0.4, b: 0.0, get: r => r.source_name },
+  { name: "year", weight: 1.2, b: 0.0, get: r => (r.year ? String(r.year) : "") },
+];
 
 const STOPWORDS = new Set([
   "a", "au", "aux", "avec", "ce", "ces", "dans", "de", "des", "du", "elle", "en",
@@ -45,6 +74,7 @@ if (!existsSync(DB_PATH)) {
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(DOCS_OUT, { recursive: true });
 mkdirSync(TERMS_OUT, { recursive: true });
+mkdirSync(RUNS_OUT, { recursive: true });
 
 function fold(text) {
   return String(text || "")
@@ -74,13 +104,31 @@ function tokenize(text) {
   return out;
 }
 
-function addWeighted(text, weight, scores) {
-  if (!text) return;
+function termCounts(text) {
   const counts = new Map();
   for (const tok of tokenize(text)) counts.set(tok, (counts.get(tok) || 0) + 1);
+  return counts;
+}
+
+function addBm25fField(text, field, avgLens, weightedTf) {
+  if (!text) return;
+  const counts = termCounts(text);
+  if (!counts.size) return;
+  const len = [...counts.values()].reduce((sum, tf) => sum + tf, 0);
+  const avgLen = avgLens[field.name] || 1;
+  const norm = (1 - field.b) + field.b * (len / avgLen);
+  const scale = field.weight / Math.max(norm, 0.01);
   for (const [tok, tf] of counts) {
-    scores.set(tok, (scores.get(tok) || 0) + weight * (1 + Math.log(tf)));
+    weightedTf.set(tok, (weightedTf.get(tok) || 0) + tf * scale);
   }
+}
+
+function bm25fScores(weightedTf) {
+  const scores = new Map();
+  for (const [tok, tf] of weightedTf) {
+    scores.set(tok, ((BM25F_K1 + 1) * tf) / (BM25F_K1 + tf));
+  }
+  return scores;
 }
 
 function addShingles(text, weight, scores) {
@@ -100,8 +148,15 @@ function recordUrl(r) {
 
 function truncatedAbstract(r) {
   if (!r.abstract) return "";
-  return r.abstract.length > ABSTRACT_LIMIT
-    ? r.abstract.slice(0, ABSTRACT_LIMIT) + "…"
+  return r.abstract.length > ABSTRACT_DISPLAY_LIMIT
+    ? r.abstract.slice(0, ABSTRACT_DISPLAY_LIMIT) + "…"
+    : r.abstract;
+}
+
+function indexAbstract(r) {
+  if (!r.abstract) return "";
+  return r.abstract.length > ABSTRACT_INDEX_LIMIT
+    ? r.abstract.slice(0, ABSTRACT_INDEX_LIMIT)
     : r.abstract;
 }
 
@@ -151,105 +206,229 @@ function rowResult(r) {
 
 function shardFor(term) {
   if (!term) return "__";
-  return `${term[0] || "_"}${term[1] || "_"}`;
+  return `${term[0] || "_"}${term[1] || "_"}${term[2] || "_"}`;
 }
 
-console.log(`▸ Reading ${DB_PATH}`);
-const db = new Database(DB_PATH, { readonly: true });
-const rows = db.prepare(
-  `SELECT
+const SELECT_ROWS = `SELECT
      rowid AS id,
      oai_identifier, title, authors, advisors, abstract, subjects,
      year, type, source_id, source_name, discipline, language, url
    FROM theses
-   ORDER BY rowid`,
-).all();
-db.close();
-console.log(`  ${rows.length.toLocaleString()} records loaded`);
+   ORDER BY rowid`;
 
-const dicts = {
-  source: { ids: new Map(), values: [] },
-  discipline: { ids: new Map(), values: [] },
-  type: { ids: new Map(), values: [] },
-  decade: { ids: new Map(), values: [] },
-};
-
-const codes = {
-  source: new Array(rows.length),
-  discipline: new Array(rows.length),
-  type: new Array(rows.length),
-  decade: new Array(rows.length),
-  year: new Array(rows.length),
-};
-
-const postingsByTerm = new Map();
-const docs = new Array(rows.length);
-
-console.log("▸ Building TQSearch postings");
-const t0 = performance.now();
-for (let docIndex = 0; docIndex < rows.length; docIndex++) {
-  const r = rows[docIndex];
-  const abstract = truncatedAbstract(r);
-  const scores = new Map();
-
-  addWeighted(r.title, 12, scores);
-  addWeighted(r.authors, 10, scores);
-  addWeighted(r.advisors, 8, scores);
-  addWeighted(r.subjects, 7, scores);
-  addWeighted(r.discipline, 5, scores);
-  addWeighted(r.source_name, 3, scores);
-  addWeighted(abstract, 1, scores);
-  addShingles(r.title, 20, scores);
-  if (r.year) addWeighted(String(r.year), 4, scores);
-
-  const topTerms = [...scores.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, MAX_TERMS_PER_DOC);
-  for (const [term, score] of topTerms) {
-    if (!postingsByTerm.has(term)) postingsByTerm.set(term, []);
-    postingsByTerm.get(term).push([docIndex, score]);
+function measureAvgLens(db, total) {
+  console.log("▸ Measuring BM25F field lengths");
+  const fieldTotals = Object.fromEntries(FIELDS.map(f => [f.name, 0]));
+  let seen = 0;
+  for (const r of db.prepare(SELECT_ROWS).iterate()) {
+    for (const field of FIELDS) fieldTotals[field.name] += tokenize(field.get(r)).length;
+    seen++;
+    if (seen % 50000 === 0) {
+      console.log(`  ... measured ${seen.toLocaleString()} / ${total.toLocaleString()}`);
+    }
   }
-
-  codes.source[docIndex] = addDict(dicts.source, r.source_id, r.source_name || r.source_id);
-  codes.discipline[docIndex] = addDict(dicts.discipline, r.discipline);
-  codes.type[docIndex] = addDict(dicts.type, r.type);
-  codes.decade[docIndex] = addDict(dicts.decade, decadeOf(r.year));
-  codes.year[docIndex] = r.year || 0;
-  docs[docIndex] = rowResult(r);
-
-  if ((docIndex + 1) % 25000 === 0) {
-    console.log(`  ... processed ${(docIndex + 1).toLocaleString()} / ${rows.length.toLocaleString()}`);
-  }
+  return Object.fromEntries(FIELDS.map(field => [
+    field.name,
+    Math.max(1, fieldTotals[field.name] / Math.max(1, total)),
+  ]));
 }
 
-const shards = new Map();
-let postingCount = 0;
-for (const [term, postings] of postingsByTerm) {
-  const df = postings.length;
-  const idf = Math.log(1 + (rows.length - df + 0.5) / (df + 0.5));
-  const encoded = postings
-    .map(([doc, score]) => [doc, Math.max(1, Math.round(score * idf * 100))])
-    .sort((a, b) => b[1] - a[1] || a[0] - b[0]);
-  postingCount += encoded.length;
-  const shard = shardFor(term);
-  if (!shards.has(shard)) shards.set(shard, {});
-  shards.get(shard)[term] = { df, p: encoded.flat() };
-}
-console.log(`  ${postingsByTerm.size.toLocaleString()} terms, ${postingCount.toLocaleString()} postings in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
-
-console.log("▸ Writing TQSearch docs");
-for (let start = 0, chunk = 0; start < docs.length; start += DOC_CHUNK_SIZE, chunk++) {
+function writeDocChunk(chunk, chunkIndex) {
+  if (!chunk.length) return;
   writeFileSync(
-    resolve(DOCS_OUT, `${String(chunk).padStart(4, "0")}.json`),
-    JSON.stringify(docs.slice(start, start + DOC_CHUNK_SIZE)),
+    resolve(DOCS_OUT, `${String(chunkIndex).padStart(4, "0")}.json`),
+    JSON.stringify(chunk),
   );
 }
 
-console.log("▸ Writing TQSearch term shards");
-const shardNames = [...shards.keys()].sort();
-for (const shard of shardNames) {
-  writeFileSync(resolve(TERMS_OUT, `${shard}.json`), JSON.stringify(shards.get(shard)));
+function flushPostingBuffer(buffer) {
+  for (const [shard, lines] of buffer.byShard) {
+    if (!lines.length) continue;
+    appendFileSync(resolve(RUNS_OUT, `${shard}.tsv`), lines.join(""));
+  }
+  buffer.byShard.clear();
+  buffer.lines = 0;
 }
+
+function bufferPosting(buffer, shardNames, term, docIndex, score) {
+  const shard = shardFor(term);
+  if (!buffer.byShard.has(shard)) buffer.byShard.set(shard, []);
+  buffer.byShard.get(shard).push(`${term}\t${docIndex}\t${Math.max(1, Math.round(score * 1000))}\n`);
+  shardNames.add(shard);
+  buffer.lines++;
+  if (buffer.lines >= POSTING_FLUSH_LINES) flushPostingBuffer(buffer);
+}
+
+function buildPostingRuns(db, total, avgLens) {
+  const dicts = {
+    source: { ids: new Map(), values: [] },
+    discipline: { ids: new Map(), values: [] },
+    type: { ids: new Map(), values: [] },
+    decade: { ids: new Map(), values: [] },
+  };
+  const codes = {
+    source: new Array(total),
+    discipline: new Array(total),
+    type: new Array(total),
+    decade: new Array(total),
+    year: new Array(total),
+  };
+  const initialResults = [];
+  const shardNames = new Set();
+  const postingBuffer = { byShard: new Map(), lines: 0 };
+  let docChunk = [];
+  let docChunkIndex = 0;
+  let rawPostingCount = 0;
+
+  console.log("▸ Streaming TQSearch documents and posting runs");
+  const t0 = performance.now();
+  let docIndex = 0;
+  for (const r of db.prepare(SELECT_ROWS).iterate()) {
+    const weightedTf = new Map();
+    for (const field of FIELDS) addBm25fField(field.get(r), field, avgLens, weightedTf);
+    const scores = bm25fScores(weightedTf);
+    addShingles(r.title, TITLE_SHINGLE_WEIGHT, scores);
+
+    const topTerms = [...scores.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, MAX_TERMS_PER_DOC);
+    for (const [term, score] of topTerms) {
+      bufferPosting(postingBuffer, shardNames, term, docIndex, score);
+      rawPostingCount++;
+    }
+
+    codes.source[docIndex] = addDict(dicts.source, r.source_id, r.source_name || r.source_id);
+    codes.discipline[docIndex] = addDict(dicts.discipline, r.discipline);
+    codes.type[docIndex] = addDict(dicts.type, r.type);
+    codes.decade[docIndex] = addDict(dicts.decade, decadeOf(r.year));
+    codes.year[docIndex] = r.year || 0;
+
+    const result = rowResult(r);
+    if (initialResults.length < INITIAL_RESULT_LIMIT) initialResults.push(result);
+    docChunk.push(result);
+    if (docChunk.length >= DOC_CHUNK_SIZE) {
+      writeDocChunk(docChunk, docChunkIndex++);
+      docChunk = [];
+    }
+
+    docIndex++;
+    if (docIndex % 25000 === 0) {
+      console.log(`  ... streamed ${docIndex.toLocaleString()} / ${total.toLocaleString()}`);
+    }
+  }
+
+  writeDocChunk(docChunk, docChunkIndex);
+  flushPostingBuffer(postingBuffer);
+  console.log(`  ${rawPostingCount.toLocaleString()} raw postings written in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+
+  return { dicts, codes, initialResults, shardNames: [...shardNames].sort() };
+}
+
+function pushVarint(out, value) {
+  let n = Math.max(0, Math.floor(value));
+  while (n >= 0x80) {
+    out.push((n % 0x80) | 0x80);
+    n = Math.floor(n / 0x80);
+  }
+  out.push(n);
+}
+
+function encodePostings(rows, total) {
+  const df = rows.length;
+  const idf = Math.log(1 + (total - df + 0.5) / (df + 0.5));
+  const encoded = rows
+    .map(([doc, score]) => [doc, Math.max(1, Math.round(score * idf / 10))])
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+  const bytes = [];
+  for (const [doc, impact] of encoded) {
+    pushVarint(bytes, doc);
+    pushVarint(bytes, impact);
+  }
+  return { df, count: encoded.length, bytes: Uint8Array.from(bytes) };
+}
+
+function buildTermShard(entries, total) {
+  const directory = [];
+  const postingChunks = [];
+  let postingOffset = 0;
+
+  for (const [term, rows] of entries.sort((a, b) => a[0].localeCompare(b[0]))) {
+    const postings = encodePostings(rows, total);
+    const termBytes = textEncoder.encode(term);
+    directory.push({
+      termBytes,
+      df: postings.df,
+      count: postings.count,
+      offset: postingOffset,
+      byteLength: postings.bytes.length,
+    });
+    postingChunks.push(postings.bytes);
+    postingOffset += postings.bytes.length;
+  }
+
+  const header = [...TERM_SHARD_MAGIC];
+  pushVarint(header, directory.length);
+  for (const entry of directory) {
+    pushVarint(header, entry.termBytes.length);
+    for (const b of entry.termBytes) header.push(b);
+    pushVarint(header, entry.df);
+    pushVarint(header, entry.count);
+    pushVarint(header, entry.offset);
+    pushVarint(header, entry.byteLength);
+  }
+
+  return Buffer.concat([
+    Buffer.from(Uint8Array.from(header)),
+    ...postingChunks.map(chunk => Buffer.from(chunk)),
+  ]);
+}
+
+async function reduceShard(shard, total) {
+  const path = resolve(RUNS_OUT, `${shard}.tsv`);
+  const byTerm = new Map();
+  const rl = createInterface({ input: createReadStream(path), crlfDelay: Infinity });
+  for await (const line of rl) {
+    if (!line) continue;
+    const [term, docRaw, scoreRaw] = line.split("\t");
+    if (!term) continue;
+    if (!byTerm.has(term)) byTerm.set(term, []);
+    byTerm.get(term).push([Number(docRaw), Number(scoreRaw)]);
+  }
+
+  let postings = 0;
+  for (const rows of byTerm.values()) postings += rows.length;
+  const shardBuffer = buildTermShard([...byTerm.entries()], total);
+  writeFileSync(resolve(TERMS_OUT, `${shard}.bin`), shardBuffer);
+  unlinkSync(path);
+  return { terms: byTerm.size, postings };
+}
+
+async function reducePostingRuns(total, shardNames) {
+  console.log("▸ Reducing posting runs into term shards");
+  const t0 = performance.now();
+  let termCount = 0;
+  let postingCount = 0;
+  for (let i = 0; i < shardNames.length; i++) {
+    const stats = await reduceShard(shardNames[i], total);
+    termCount += stats.terms;
+    postingCount += stats.postings;
+    if ((i + 1) % 1000 === 0 || i + 1 === shardNames.length) {
+      console.log(`  ... reduced ${(i + 1).toLocaleString()} / ${shardNames.length.toLocaleString()} shards`);
+    }
+  }
+  console.log(`  ${termCount.toLocaleString()} terms, ${postingCount.toLocaleString()} postings in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+  return { termCount, postingCount };
+}
+
+console.log(`▸ Reading ${DB_PATH}`);
+const db = new Database(DB_PATH, { readonly: true });
+const total = db.prepare("SELECT COUNT(*) AS n FROM theses").get().n;
+console.log(`  ${total.toLocaleString()} records available`);
+
+const avgLens = measureAvgLens(db, total);
+const { dicts, codes, initialResults, shardNames } = buildPostingRuns(db, total, avgLens);
+db.close();
+const { termCount, postingCount } = await reducePostingRuns(total, shardNames);
 
 const sources = facetRows(dicts.source);
 const builtAt = new Date().toISOString();
@@ -257,9 +436,9 @@ const manifest = {
   version: 1,
   engine: "tqsearch",
   built_at: builtAt,
-  total: rows.length,
+  total,
   doc_chunk_size: DOC_CHUNK_SIZE,
-  initial_results: docs.slice(0, INITIAL_RESULT_LIMIT),
+  initial_results: initialResults,
   facets: {
     discipline: facetRows(dicts.discipline),
     source: sources,
@@ -273,15 +452,20 @@ const manifest = {
   },
   shards: shardNames,
   stats: {
-    terms: postingsByTerm.size,
+    terms: termCount,
     postings: postingCount,
     max_terms_per_doc: MAX_TERMS_PER_DOC,
-    abstract_limit: ABSTRACT_LIMIT,
+    abstract_display_limit: ABSTRACT_DISPLAY_LIMIT,
+    abstract_index_limit: ABSTRACT_INDEX_LIMIT,
+    scoring: "bm25f-impact-v1",
+    builder: "file-backed-shard-runs-v1",
+    term_shard_format: TERM_SHARD_FORMAT,
   },
 };
 
 writeFileSync(resolve(OUT, "manifest.json"), JSON.stringify(manifest));
 writeFileSync(resolve(OUT, "codes.json"), JSON.stringify(codes));
+rmSync(WORK_OUT, { recursive: true, force: true });
 
 let outSize = "?";
 try {

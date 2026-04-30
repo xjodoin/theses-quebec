@@ -26,6 +26,7 @@ let codes = null;
 const shardCache = new Map();
 const docChunkCache = new Map();
 const availableShards = new Set();
+const termDecoder = new TextDecoder();
 
 function fold(text) {
   return String(text || "")
@@ -70,7 +71,55 @@ function queryTerms(text) {
 }
 
 function shardFor(term) {
-  return `${term[0] || "_"}${term[1] || "_"}`;
+  return `${term[0] || "_"}${term[1] || "_"}${term[2] || "_"}`;
+}
+
+function readVarint(bytes, state) {
+  let value = 0;
+  let multiplier = 1;
+  while (state.pos < bytes.length) {
+    const byte = bytes[state.pos++];
+    value += (byte & 0x7f) * multiplier;
+    if ((byte & 0x80) === 0) return value;
+    multiplier *= 0x80;
+  }
+  return value;
+}
+
+function parseShard(buffer) {
+  const bytes = new Uint8Array(buffer);
+  if (bytes[0] !== 0x54 || bytes[1] !== 0x51 || bytes[2] !== 0x53 || bytes[3] !== 0x42) {
+    throw new Error("Unsupported tqsearch term shard");
+  }
+  const state = { pos: 4 };
+  const termCount = readVarint(bytes, state);
+  const terms = new Map();
+  for (let i = 0; i < termCount; i++) {
+    const len = readVarint(bytes, state);
+    const start = state.pos;
+    state.pos += len;
+    const term = termDecoder.decode(bytes.subarray(start, state.pos));
+    terms.set(term, {
+      df: readVarint(bytes, state),
+      count: readVarint(bytes, state),
+      offset: readVarint(bytes, state),
+      byteLength: readVarint(bytes, state),
+      p: null,
+    });
+  }
+  return { bytes, dataStart: state.pos, terms };
+}
+
+function decodePosting(shard, entry) {
+  if (entry.p) return { df: entry.df, p: entry.p };
+  const p = new Int32Array(entry.count * 2);
+  const state = { pos: shard.dataStart + entry.offset };
+  for (let i = 0; i < entry.count; i++) {
+    p[i * 2] = readVarint(shard.bytes, state);
+    p[i * 2 + 1] = readVarint(shard.bytes, state);
+  }
+  entry.p = p;
+  return { df: entry.df, p };
 }
 
 async function loadCodes() {
@@ -82,7 +131,7 @@ async function loadCodes() {
 async function loadShard(shard) {
   if (!availableShards.has(shard)) return {};
   if (!shardCache.has(shard)) {
-    shardCache.set(shard, fetch(`./tqsearch/terms/${shard}.json`).then(r => r.json()));
+    shardCache.set(shard, fetch(`./tqsearch/terms/${shard}.bin`).then(r => r.arrayBuffer()).then(parseShard));
   }
   return shardCache.get(shard);
 }
@@ -167,7 +216,8 @@ async function postingsForTerms(terms) {
   await Promise.all([...byShard.entries()].map(async ([shard, shardTerms]) => {
     const data = await loadShard(shard);
     for (const term of shardTerms) {
-      if (data[term]) out.push({ term, posting: data[term] });
+      const entry = data.terms?.get(term);
+      if (entry) out.push({ term, posting: decodePosting(data, entry) });
     }
   }));
   return out;
@@ -230,7 +280,7 @@ export default {
           if (baseTermSet.has(term)) hits.set(doc, (hits.get(doc) || 0) + 1);
         }
       }
-      const minShouldMatch = baseTerms.length <= 2 ? baseTerms.length : baseTerms.length - 1;
+      const minShouldMatch = baseTerms.length <= 4 ? baseTerms.length : baseTerms.length - 1;
       scored = [...scores.entries()]
         .filter(([doc]) => (hits.get(doc) || 0) >= minShouldMatch)
         .map(([doc, score]) => ({ doc, score }));

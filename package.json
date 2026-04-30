@@ -1,11 +1,12 @@
 {
   "name": "theses-quebec-static",
   "version": "0.1.0",
-  "description": "Static-site build pipeline: SQLite → MiniSearch index → dist/",
+  "description": "Static-site build pipeline: SQLite → TQSearch index → dist/",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:bench": "node scripts/build.mjs --with-pagefind",
     "build:tqsearch": "node scripts/build_tqsearch.mjs",
     "bench:search:performance": "node scripts/bench_search_performance.mjs",
     "bench:search:quality": "node scripts/bench_search_quality.mjs",
