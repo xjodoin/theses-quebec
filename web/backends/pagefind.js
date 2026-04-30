@@ -11,6 +11,13 @@ let meta = null;
 
 const SOURCE_NAMES = new Map();
 
+function firstFilterValue(filters, field) {
+  const value = filters?.[field];
+  if (Array.isArray(value)) return value[0] || null;
+  if (typeof value === "string") return value;
+  return null;
+}
+
 export default {
   label: "pagefind",
   hasSplash: true,
@@ -48,6 +55,19 @@ export default {
     else if (sort === "year_asc") opts.sort = { year: "asc" };
 
     const query = q && q.trim() ? q.trim() : null;
+    const start = (page - 1) * size;
+    const isDefaultSearch = !query
+      && !Object.keys(filters).length
+      && (!sort || sort === "relevance")
+      && start + size <= (meta.initial_results?.length || 0);
+
+    if (isDefaultSearch) {
+      return {
+        total: meta.total,
+        results: meta.initial_results.slice(start, start + size),
+        facets: meta.facets,
+      };
+    }
 
     // Search + global facet counts in parallel. search.filters is empty when
     // query is null; pagefind.filters() always returns a non-empty map.
@@ -57,24 +77,26 @@ export default {
     ]);
 
     const total = search.results.length;
-    const start = (page - 1) * size;
     const visible = search.results.slice(start, start + size);
     const data = await Promise.all(visible.map(r => r.data()));
 
     const results = data.map((d, i) => {
       const m = d.meta || {};
+      const sourceId = firstFilterValue(d.filters, "source");
+      const typeValue = firstFilterValue(d.filters, "type");
+      const disciplineValue = firstFilterValue(d.filters, "discipline");
       return {
         id: search.results[start + i].id,
         title: m.title,
         authors: m.authors,
         advisors: m.advisors || null,
-        abstract: m.abstract,
+        abstract: m.has_abstract === "1" ? (d.content || null) : null,
         year: m.year ? Number(m.year) : null,
-        type: m.type,
-        source_id: (Array.isArray(d.filters?.source) ? d.filters.source[0] : null) || null,
-        source_name: m.source_name,
-        discipline: m.discipline,
-        url: m.url || d.url,
+        type: typeValue,
+        source_id: sourceId,
+        source_name: SOURCE_NAMES.get(sourceId) || sourceId,
+        discipline: disciplineValue,
+        url: d.url,
         excerpt: d.excerpt || null,
       };
     });

@@ -10,7 +10,7 @@
  *
  * For each thesis we register:
  *   url       — canonical URL (the source landing page)
- *   content   — title + subjects + (full) abstract — what's searched
+ *   content   — abstract text; Pagefind also indexes selected meta fields
  *   language  — `r.language` if known, default 'fr'
  *   meta      — fields displayed in result cards (title, authors, year, …)
  *   filters   — discipline, source_id, type, decade — faceted in the UI
@@ -73,8 +73,15 @@ function recordLang(r) {
   return "fr";
 }
 
-const ABSTRACT_LIMIT = 1500;   // longer than v0.4 — Pagefind chunks scale fine
-const TYPE_LABEL = { thesis: "Thèse", memoire: "Mémoire" };
+const ABSTRACT_LIMIT = 900;
+const INITIAL_RESULT_LIMIT = 50;
+
+function truncatedAbstract(r) {
+  if (!r.abstract) return "";
+  return r.abstract.length > ABSTRACT_LIMIT
+    ? r.abstract.slice(0, ABSTRACT_LIMIT) + "…"
+    : r.abstract;
+}
 
 console.log("▸ Building Pagefind index");
 const t0 = performance.now();
@@ -91,23 +98,16 @@ const { index } = await pagefind.createIndex({ forceLanguage: "fr" });
 let added = 0;
 let errors = 0;
 for (const r of rows) {
-  const abstract = r.abstract && r.abstract.length > ABSTRACT_LIMIT
-    ? r.abstract.slice(0, ABSTRACT_LIMIT) + "…"
-    : (r.abstract || "");
+  const abstract = truncatedAbstract(r);
 
   const decade = r.year ? `${Math.floor(r.year / 10) * 10}s` : null;
 
-  // The `content` is what Pagefind indexes for full-text search. We
-  // concatenate title + subjects + abstract; field weighting is handled by
-  // Pagefind's heuristics (title-ish HTML hints would help, but with custom
-  // records we settle for token frequency and the stemmer). Advisors are
-  // included so a name search ("Pâquet") finds theses they directed.
-  const content = [
-    r.title,
-    r.subjects,
-    r.advisors,
-    abstract,
-  ].filter(Boolean).join("\n\n");
+  // Pagefind indexes every `meta` field in addition to `content`. Keep
+  // content to the abstract only when one exists, otherwise use a minimal
+  // identifier fallback so no-abstract records still appear in the default
+  // empty-query result set without duplicating title terms from meta.title.
+  const hasAbstract = !!abstract;
+  const content = hasAbstract ? abstract : (r.oai_identifier || recordUrl(r));
 
   // `meta` and `filters` only accept strings in the Pagefind API. Numbers go
   // to strings; nulls/empties are dropped (Pagefind would reject them).
@@ -118,26 +118,20 @@ for (const r of rows) {
   if (r.title) meta.title = r.title;
   if (r.authors) meta.authors = r.authors;
   if (r.advisors) meta.advisors = r.advisors;
-  if (r.abstract) meta.abstract = abstract;
+  if (r.subjects) meta.subjects = r.subjects;
+  if (hasAbstract) meta.has_abstract = "1";
   if (r.year) {
     meta.year = String(r.year);
     sort.year = String(r.year).padStart(5, "0");  // sort lexicographically
   }
   if (r.source_id) filters.source = [r.source_id];
-  if (r.source_name) meta.source_name = r.source_name;
   if (r.type) {
     filters.type = [r.type];
-    meta.type = r.type;
-    meta.type_label = TYPE_LABEL[r.type] || r.type;
   }
   if (r.discipline) {
     filters.discipline = [r.discipline];
-    meta.discipline = r.discipline;
   }
   if (decade) filters.decade = [decade];
-  if (r.discipline_source) meta.discipline_source = r.discipline_source;
-  if (r.authoritative_discipline) meta.authoritative_discipline = r.authoritative_discipline;
-  meta.url = recordUrl(r);
 
   try {
     await index.addCustomRecord({
@@ -172,10 +166,47 @@ for (const r of rows) {
   }
   sourcesById.get(r.source_id).n++;
 }
+
+function countFacet(valueFn, labelFn = value => value) {
+  const counts = new Map();
+  for (const r of rows) {
+    const value = valueFn(r);
+    if (!value) continue;
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([value, n]) => ({ value, label: labelFn(value), n }))
+    .sort((a, b) => b.n - a.n);
+}
+
+function rowResult(r) {
+  return {
+    id: String(r.id),
+    title: r.title,
+    authors: r.authors,
+    advisors: r.advisors || null,
+    abstract: truncatedAbstract(r) || null,
+    year: r.year || null,
+    type: r.type,
+    source_id: r.source_id,
+    source_name: r.source_name,
+    discipline: r.discipline,
+    url: recordUrl(r),
+    excerpt: null,
+  };
+}
+
 const meta = {
   built_at: new Date().toISOString(),
   total: rows.length,
   sources: [...sourcesById.values()].sort((a, b) => b.n - a.n),
+  initial_results: rows.slice(0, INITIAL_RESULT_LIMIT).map(rowResult),
+  facets: {
+    discipline: countFacet(r => r.discipline),
+    source: countFacet(r => r.source_id, id => sourcesById.get(id)?.name || id),
+    decade: countFacet(r => r.year ? `${Math.floor(r.year / 10) * 10}s` : null)
+      .sort((a, b) => a.value.localeCompare(b.value)),
+  },
   search_engine: "pagefind",
 };
 writeFileSync(resolve(DIST, "meta.json"), JSON.stringify(meta));
