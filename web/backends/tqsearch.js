@@ -23,6 +23,10 @@ let manifest = null;
 let codesPromise = null;
 let codes = null;
 
+const FAST_TOPK_MAX_TERMS = 30;
+const FAST_TOPK_MAX_RESULTS = 50;
+const FAST_TOPK_CHECK_BLOCKS = 4;
+
 const shardCache = new Map();
 const docChunkCache = new Map();
 const availableShards = new Set();
@@ -114,8 +118,19 @@ function parseShard(buffer) {
       count: readVarint(bytes, state),
       offset: readVarint(bytes, state),
       byteLength: readVarint(bytes, state),
+      blockSize: readVarint(bytes, state),
+      blocks: null,
       p: null,
     });
+    const entry = terms.get(term);
+    const blockCount = readVarint(bytes, state);
+    entry.blocks = new Array(blockCount);
+    for (let j = 0; j < blockCount; j++) {
+      entry.blocks[j] = {
+        offset: readVarint(bytes, state),
+        maxImpact: readVarint(bytes, state),
+      };
+    }
   }
   return { bytes, dataStart: state.pos, terms };
 }
@@ -188,8 +203,44 @@ function decodePosting(shard, entry) {
   return { df: entry.df, p };
 }
 
+function createPostingCursor(shard, entry, termIndex, isBase) {
+  return {
+    shard,
+    entry,
+    termIndex,
+    isBase,
+    blockIndex: 0,
+    decoded: 0,
+    pos: shard.dataStart + entry.offset,
+  };
+}
+
+function cursorRemainingMax(cursor) {
+  return cursor.entry.blocks[cursor.blockIndex]?.maxImpact || 0;
+}
+
+function decodeCursorBlock(cursor) {
+  const { entry, shard } = cursor;
+  const block = entry.blocks[cursor.blockIndex];
+  if (!block) return [];
+
+  const next = entry.blocks[cursor.blockIndex + 1];
+  const blockEnd = shard.dataStart + entry.offset + (next?.offset ?? entry.byteLength);
+  const countEnd = Math.min(entry.count, (cursor.blockIndex + 1) * entry.blockSize);
+  const state = { pos: cursor.pos };
+  const rows = [];
+  while (state.pos < blockEnd && cursor.decoded < countEnd) {
+    rows.push([readVarint(shard.bytes, state), readVarint(shard.bytes, state)]);
+    cursor.decoded++;
+  }
+  cursor.pos = state.pos;
+  cursor.blockIndex++;
+  return rows;
+}
+
 async function loadCodes() {
   if (codes) return codes;
+  if (!codesPromise) codesPromise = fetchGzipArrayBuffer("./tqsearch/codes.bin.gz").then(parseCodes);
   codes = await codesPromise;
   return codes;
 }
@@ -271,6 +322,11 @@ function countFacets(docIds, codeData) {
 }
 
 async function postingsForTerms(terms) {
+  const entries = await termEntriesForTerms(terms);
+  return entries.map(({ term, shard, entry }) => ({ term, posting: decodePosting(shard, entry) }));
+}
+
+async function termEntriesForTerms(terms) {
   const byShard = new Map();
   for (const term of terms) {
     const shard = shardFor(term);
@@ -283,7 +339,7 @@ async function postingsForTerms(terms) {
     const data = await loadShard(shard);
     for (const term of shardTerms) {
       const entry = data.terms?.get(term);
-      if (entry) out.push({ term, posting: decodePosting(data, entry) });
+      if (entry) out.push({ term, shard: data, entry });
     }
   }));
   return out;
@@ -293,6 +349,167 @@ function allDocIds(total) {
   return Array.from({ length: total }, (_, i) => i);
 }
 
+function selectedSize(value) {
+  return value?.size || 0;
+}
+
+function hasActiveFilters({ type, year_min, year_max, discipline, source }) {
+  return !!type || !!year_min || !!year_max || selectedSize(discipline) > 0 || selectedSize(source) > 0;
+}
+
+function minShouldMatchFor(baseTerms) {
+  return baseTerms.length <= 4 ? baseTerms.length : baseTerms.length - 1;
+}
+
+function sortScored(scored, codeData, sort) {
+  if (sort === "year_desc") {
+    scored.sort((a, b) => (codeData.year[b.doc] || 0) - (codeData.year[a.doc] || 0) || b.score - a.score);
+  } else if (sort === "year_asc") {
+    scored.sort((a, b) => (codeData.year[a.doc] || 9999) - (codeData.year[b.doc] || 9999) || b.score - a.score);
+  } else {
+    scored.sort((a, b) => b.score - a.score || a.doc - b.doc);
+  }
+  return scored;
+}
+
+function collectEligibleScores(scores, hits, minShouldMatch) {
+  const out = [];
+  for (const [doc, score] of scores) {
+    if ((hits.get(doc) || 0) >= minShouldMatch) out.push({ doc, score });
+  }
+  out.sort((a, b) => b.score - a.score || a.doc - b.doc);
+  return out;
+}
+
+function remainingPotential(cursors, mask = 0) {
+  let potential = 0;
+  for (const cursor of cursors) {
+    if ((mask & (1 << cursor.termIndex)) === 0) potential += cursorRemainingMax(cursor);
+  }
+  return potential;
+}
+
+function stableTopK(scores, hits, masks, cursors, minShouldMatch, k) {
+  const eligible = collectEligibleScores(scores, hits, minShouldMatch);
+  if (eligible.length < k) return null;
+
+  const top = eligible.slice(0, k);
+  const topDocs = new Set(top.map(r => r.doc));
+  const threshold = top[top.length - 1].score;
+  let maxOutsidePotential = remainingPotential(cursors);
+
+  for (const [doc, score] of scores) {
+    if (topDocs.has(doc)) continue;
+    const potential = score + remainingPotential(cursors, masks.get(doc) || 0);
+    if (potential > maxOutsidePotential) maxOutsidePotential = potential;
+    if (maxOutsidePotential >= threshold) return null;
+  }
+
+  return { top, totalLowerBound: eligible.length };
+}
+
+async function fastTopKSearch({ baseTerms, terms, page, size }) {
+  const k = page * size;
+  if (!baseTerms.length || k > FAST_TOPK_MAX_RESULTS || terms.length > FAST_TOPK_MAX_TERMS) return null;
+
+  const baseTermSet = new Set(baseTerms);
+  const entries = await termEntriesForTerms(terms);
+  if (!entries.length || entries.length > FAST_TOPK_MAX_TERMS) return null;
+
+  const cursors = entries.map(({ term, shard, entry }, termIndex) =>
+    createPostingCursor(shard, entry, termIndex, baseTermSet.has(term)));
+  const scores = new Map();
+  const hits = new Map();
+  const masks = new Map();
+  const minShouldMatch = minShouldMatchFor(baseTerms);
+  let blocksDecoded = 0;
+  let postingsDecoded = 0;
+
+  while (true) {
+    let best = null;
+    for (const cursor of cursors) {
+      const max = cursorRemainingMax(cursor);
+      if (max > 0 && (!best || max > best.max)) best = { cursor, max };
+    }
+    if (!best) break;
+
+    const cursor = best.cursor;
+    const bit = 1 << cursor.termIndex;
+    for (const [doc, impact] of decodeCursorBlock(cursor)) {
+      scores.set(doc, (scores.get(doc) || 0) + impact);
+      masks.set(doc, (masks.get(doc) || 0) | bit);
+      if (cursor.isBase) hits.set(doc, (hits.get(doc) || 0) + 1);
+      postingsDecoded++;
+    }
+    blocksDecoded++;
+
+    if (blocksDecoded % FAST_TOPK_CHECK_BLOCKS === 0) {
+      const stable = stableTopK(scores, hits, masks, cursors, minShouldMatch, k);
+      if (stable) {
+        return {
+          scored: stable.top,
+          totalLowerBound: stable.totalLowerBound,
+          stats: { blocksDecoded, postingsDecoded, exact: false },
+        };
+      }
+    }
+  }
+
+  const scored = collectEligibleScores(scores, hits, minShouldMatch);
+  return {
+    scored,
+    totalLowerBound: scored.length,
+    stats: { blocksDecoded, postingsDecoded, exact: true },
+  };
+}
+
+async function exactSearch({ q, type, year_min, year_max, sort, discipline, source, page, size }) {
+  const query = q && q.trim() ? q.trim() : "";
+  const start = (page - 1) * size;
+  const baseTerms = tokenize(query);
+  const terms = queryTerms(query);
+  const codeDataPromise = loadCodes();
+  const filtersActive = hasActiveFilters({ type, year_min, year_max, discipline, source });
+  const needsCodeBeforeScoring = filtersActive || sort === "year_desc" || sort === "year_asc" || !baseTerms.length;
+  const codeData = needsCodeBeforeScoring ? await codeDataPromise : null;
+  const passesFilters = filtersActive
+    ? makeFilterPredicate({ type, year_min, year_max, discipline, source }, codeData)
+    : () => true;
+  let scored = [];
+
+  if (!baseTerms.length) {
+    scored = allDocIds(manifest.total)
+      .filter(passesFilters)
+      .map(doc => ({ doc, score: 0 }));
+  } else {
+    const scores = new Map();
+    const hits = new Map();
+    const baseTermSet = new Set(baseTerms);
+    for (const { term, posting } of await postingsForTerms(terms)) {
+      const p = posting.p;
+      for (let i = 0; i < p.length; i += 2) {
+        const doc = p[i];
+        if (!passesFilters(doc)) continue;
+        scores.set(doc, (scores.get(doc) || 0) + p[i + 1]);
+        if (baseTermSet.has(term)) hits.set(doc, (hits.get(doc) || 0) + 1);
+      }
+    }
+    scored = collectEligibleScores(scores, hits, minShouldMatchFor(baseTerms));
+  }
+
+  const finalCodeData = codeData || await codeDataPromise;
+  sortScored(scored, finalCodeData, sort);
+  const docIds = scored.map(r => r.doc);
+  const visible = scored.slice(start, start + size);
+  const results = await Promise.all(visible.map(r => loadDoc(r.doc)));
+
+  return {
+    total: scored.length,
+    results,
+    facets: countFacets(docIds, finalCodeData),
+  };
+}
+
 export default {
   label: "tqsearch",
   hasSplash: true,
@@ -300,8 +517,6 @@ export default {
   async init() {
     manifest = await fetch("./tqsearch/manifest.json").then(r => r.json());
     for (const shard of manifest.shards) availableShards.add(shard);
-    codesPromise = fetchGzipArrayBuffer("./tqsearch/codes.bin.gz").then(parseCodes);
-    codes = await codesPromise;
     return {
       total: manifest.total,
       sources: manifest.facets.source.map(s => ({ id: s.value, name: s.label, n: s.n })),
@@ -309,7 +524,7 @@ export default {
     };
   },
 
-  async search({ q, type, year_min, year_max, sort, discipline, source, page, size }) {
+  async search({ q, type, year_min, year_max, sort, discipline, source, page, size, exact = false }) {
     const query = q && q.trim() ? q.trim() : "";
     const start = (page - 1) * size;
     const defaultSearch = !query && !type && !year_min && !year_max
@@ -323,51 +538,25 @@ export default {
       };
     }
 
-    const codeData = await loadCodes();
-    const passesFilters = makeFilterPredicate({ type, year_min, year_max, discipline, source }, codeData);
     const baseTerms = tokenize(query);
     const terms = queryTerms(query);
-    let scored = [];
 
-    if (!baseTerms.length) {
-      scored = allDocIds(manifest.total)
-        .filter(passesFilters)
-        .map(doc => ({ doc, score: 0 }));
-    } else {
-      const scores = new Map();
-      const hits = new Map();
-      const baseTermSet = new Set(baseTerms);
-      for (const { term, posting } of await postingsForTerms(terms)) {
-        const p = posting.p;
-        for (let i = 0; i < p.length; i += 2) {
-          const doc = p[i];
-          if (!passesFilters(doc)) continue;
-          scores.set(doc, (scores.get(doc) || 0) + p[i + 1]);
-          if (baseTermSet.has(term)) hits.set(doc, (hits.get(doc) || 0) + 1);
-        }
+    if (!exact && query && page === 1 && (!sort || sort === "relevance")
+      && !hasActiveFilters({ type, year_min, year_max, discipline, source })) {
+      const fast = await fastTopKSearch({ baseTerms, terms, page, size });
+      if (fast && fast.scored.length >= Math.min(size, fast.totalLowerBound)) {
+        const visible = fast.scored.slice(start, start + size);
+        const results = await Promise.all(visible.map(r => loadDoc(r.doc)));
+        return {
+          total: fast.totalLowerBound,
+          approximate: true,
+          results,
+          facets: manifest.facets,
+          stats: fast.stats,
+        };
       }
-      const minShouldMatch = baseTerms.length <= 4 ? baseTerms.length : baseTerms.length - 1;
-      scored = [...scores.entries()]
-        .filter(([doc]) => (hits.get(doc) || 0) >= minShouldMatch)
-        .map(([doc, score]) => ({ doc, score }));
     }
 
-    if (sort === "year_desc") {
-      scored.sort((a, b) => (codeData.year[b.doc] || 0) - (codeData.year[a.doc] || 0) || b.score - a.score);
-    } else if (sort === "year_asc") {
-      scored.sort((a, b) => (codeData.year[a.doc] || 9999) - (codeData.year[b.doc] || 9999) || b.score - a.score);
-    } else {
-      scored.sort((a, b) => b.score - a.score || a.doc - b.doc);
-    }
-
-    const docIds = scored.map(r => r.doc);
-    const visible = scored.slice(start, start + size);
-    const results = await Promise.all(visible.map(r => loadDoc(r.doc)));
-
-    return {
-      total: scored.length,
-      results,
-      facets: countFacets(docIds, codeData),
-    };
+    return exactSearch({ q, type, year_min, year_max, sort, discipline, source, page, size });
   },
 };

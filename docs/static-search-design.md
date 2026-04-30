@@ -29,16 +29,19 @@ The build emits:
 - `manifest.json`: total count, facets, source dictionaries, shard names, and
   the first default results.
 - `codes.bin.gz`: compressed columnar per-document facet/year codes for browser
-  filtering and facet counts.
+  filtering and exact facet counts. The runtime loads this lazily, so opening
+  the search page no longer downloads the full filter table.
 - `docs/*.json`: lazy-loaded result payload chunks. Chunks are intentionally
   small so rendering 10 search cards does not pull large unrelated payloads.
 - `terms/*.bin.gz`: gzip-compressed binary term shards containing
   impact-sorted postings.
 
 Each term shard has a compact term directory followed by varint-encoded
-`[docIndex, impact]` postings. The browser fetches the compressed shard,
-inflates it with the browser's native `DecompressionStream`, parses the
-directory, and decodes postings lazily only for query terms.
+`[docIndex, impact]` postings. Directory entries include 128-posting block
+metadata with each block's byte offset and max remaining impact. The browser
+fetches the compressed shard, inflates it with the browser's native
+`DecompressionStream`, parses the directory, and decodes postings lazily only
+for query terms.
 
 Shard keys are adaptive. The builder first writes temporary three-character
 posting runs, then splits only oversized prefixes to four or five characters
@@ -46,13 +49,21 @@ before writing final shards. Common prefixes such as `int` and `app` therefore
 no longer force the browser to download every term with that prefix, while
 uncommon prefixes keep the simpler three-character layout.
 
+For first-page, unfiltered relevance searches, the runtime uses the block
+metadata as an impact-ordered top-k bound. It decodes the highest-impact blocks
+first and stops when no unseen or partially seen document can enter the current
+top results. That response carries lower-bound totals and global facets so it
+can render immediately. The UI then issues an exact refinement request, which
+loads `codes.bin.gz` only if needed and updates exact totals/facets.
+
 ## Scalable Builder
 
 The builder is file-backed:
 
 1. Stream rows once to measure average BM25F field lengths.
 2. Stream rows again to write document chunks and temporary posting runs.
-3. Reduce one posting shard at a time into the final static term shard.
+3. Reduce one posting shard at a time into final adaptive shards, adding block
+   metadata while each term is already local to the reducer.
 4. Delete the temporary `_build` directory.
 
 Peak memory is therefore bounded by the current document, small posting buffers,
@@ -78,8 +89,8 @@ postings in memory.
 
 ## Next Engine Work
 
-- Add block metadata to the binary postings format and use it for safe top-k
-  skipping once the UI can accept approximate facet counts for early results.
+- Extend block-max top-k to filtered searches by adding small per-block facet
+  summaries or filter bitsets.
 - Add delta coding for doc IDs in optional document-ordered posting blocks while
   preserving the current impact-ordered path for fast first results.
 - Add an optional offline sparse-expansion hook. The output should be just extra

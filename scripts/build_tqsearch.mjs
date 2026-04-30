@@ -40,9 +40,10 @@ const MIN_TOKEN_LENGTH = 2;
 const BM25F_K1 = 1.2;
 const TITLE_SHINGLE_WEIGHT = 10;
 const POSTING_FLUSH_LINES = 100000;
-const TERM_SHARD_FORMAT = "tqsbin-v1";
+const TERM_SHARD_FORMAT = "tqsbin-v2";
 const TERM_SHARD_COMPRESSION = "gzip";
 const TERM_SHARD_MAGIC = [0x54, 0x51, 0x53, 0x42]; // TQSB
+const POSTING_BLOCK_SIZE = 128;
 const BASE_SHARD_DEPTH = 3;
 const MAX_SHARD_DEPTH = 5;
 const TARGET_SHARD_POSTINGS = 30000;
@@ -352,11 +353,16 @@ function encodePostings(rows, total) {
     .map(([doc, score]) => [doc, Math.max(1, Math.round(score * idf / 10))])
     .sort((a, b) => b[1] - a[1] || a[0] - b[0]);
   const bytes = [];
-  for (const [doc, impact] of encoded) {
+  const blocks = [];
+  for (let i = 0; i < encoded.length; i++) {
+    const [doc, impact] = encoded[i];
+    if (i % POSTING_BLOCK_SIZE === 0) {
+      blocks.push({ offset: bytes.length, maxImpact: impact });
+    }
     pushVarint(bytes, doc);
     pushVarint(bytes, impact);
   }
-  return { df, count: encoded.length, bytes: Uint8Array.from(bytes) };
+  return { df, count: encoded.length, bytes: Uint8Array.from(bytes), blocks };
 }
 
 function buildTermShard(entries, total) {
@@ -373,6 +379,7 @@ function buildTermShard(entries, total) {
       count: postings.count,
       offset: postingOffset,
       byteLength: postings.bytes.length,
+      blocks: postings.blocks,
     });
     postingChunks.push(postings.bytes);
     postingOffset += postings.bytes.length;
@@ -387,6 +394,12 @@ function buildTermShard(entries, total) {
     pushVarint(header, entry.count);
     pushVarint(header, entry.offset);
     pushVarint(header, entry.byteLength);
+    pushVarint(header, POSTING_BLOCK_SIZE);
+    pushVarint(header, entry.blocks.length);
+    for (const block of entry.blocks) {
+      pushVarint(header, block.offset);
+      pushVarint(header, block.maxImpact);
+    }
   }
 
   return Buffer.concat([
@@ -553,6 +566,7 @@ const manifest = {
     builder: "file-backed-shard-runs-v1",
     term_shard_format: TERM_SHARD_FORMAT,
     term_shard_compression: TERM_SHARD_COMPRESSION,
+    posting_block_size: POSTING_BLOCK_SIZE,
     term_base_shard_depth: BASE_SHARD_DEPTH,
     term_max_shard_depth: MAX_SHARD_DEPTH,
     term_target_shard_postings: TARGET_SHARD_POSTINGS,

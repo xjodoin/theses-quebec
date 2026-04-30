@@ -685,35 +685,58 @@ export async function bootstrap(backend, options = {}) {
     }
     if (myToken !== lastSearchToken) return;   // a newer search has started
 
-    const dt = (performance.now() - t0).toFixed(0);
-    $("#status").innerHTML =
-      `<span class="font-medium text-ink-900 dark:text-ink-50">${fmt(response.total)}</span> ` +
-      `${response.total === 1 ? "résultat" : "résultats"}` +
-      (state.q ? ` pour <span class="text-ink-900 dark:text-ink-50">« ${escapeHTML(state.q)} »</span>` : "") +
-      ` <span class="text-ink-400 dark:text-ink-500">· ${dt} ms</span>`;
+    const renderResponse = (next, dt, refined = false) => {
+      const total = next.approximate ? `${fmt(next.total)}+` : fmt(next.total);
+      $("#status").innerHTML =
+        `<span class="font-medium text-ink-900 dark:text-ink-50">${total}</span> ` +
+        `${next.total === 1 && !next.approximate ? "résultat" : "résultats"}` +
+        (state.q ? ` pour <span class="text-ink-900 dark:text-ink-50">« ${escapeHTML(state.q)} »</span>` : "") +
+        ` <span class="text-ink-400 dark:text-ink-500">· ${dt} ms${next.approximate ? " · affinage…" : refined ? " · exact" : ""}</span>`;
 
-    // Build the didYouMean vocabulary from the first non-empty facets we see.
-    // Discipline + source labels are the most useful corrections; we also
-    // sprinkle in tokens that appear inside multi-word labels so a typo in
-    // "psychologie" still maps even when the full label is "Psychologie".
-    if (!vocabulary && response.facets) {
-      const fold = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-      const set = new Set();
-      const harvest = (arr) => {
-        for (const it of (arr || [])) {
-          for (const tok of fold(it.label).split(/[^a-z0-9]+/)) {
-            if (tok.length >= 4) set.add(tok);
+      // Build the didYouMean vocabulary from the first non-empty facets we see.
+      // Discipline + source labels are the most useful corrections; we also
+      // sprinkle in tokens that appear inside multi-word labels so a typo in
+      // "psychologie" still maps even when the full label is "Psychologie".
+      if (!vocabulary && next.facets) {
+        const fold = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        const set = new Set();
+        const harvest = (arr) => {
+          for (const it of (arr || [])) {
+            for (const tok of fold(it.label).split(/[^a-z0-9]+/)) {
+              if (tok.length >= 4) set.add(tok);
+            }
           }
-        }
-      };
-      harvest(response.facets.discipline);
-      harvest(response.facets.source);
-      if (set.size) vocabulary = [...set];
-    }
+        };
+        harvest(next.facets.discipline);
+        harvest(next.facets.source);
+        if (set.size) vocabulary = [...set];
+      }
 
-    renderResults(response.results);
-    renderPager(response.total, state.page, state.size);
-    renderFacets(response.facets);
+      renderResults(next.results);
+      renderPager(next.total, state.page, state.size);
+      renderFacets(next.facets);
+    };
+
+    const dt = (performance.now() - t0).toFixed(0);
+    renderResponse(response, dt);
+
+    if (response.approximate) {
+      const exactState = {
+        ...state,
+        discipline: new Set(state.discipline),
+        source: new Set(state.source),
+        exact: true,
+      };
+      backend.search(exactState)
+        .then((exact) => {
+          if (myToken !== lastSearchToken) return;
+          renderResponse(exact, (performance.now() - t0).toFixed(0), true);
+        })
+        .catch((err) => {
+          if (myToken !== lastSearchToken) return;
+          console.error(err);
+        });
+    }
   }
 
   // ---------------------------------------------------------- wiring -----

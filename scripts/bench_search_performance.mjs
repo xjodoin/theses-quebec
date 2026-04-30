@@ -117,6 +117,7 @@ async function runBackend(page, engine, queries, runs, size) {
       const requests = [];
       const transfers = [];
       let total = 0;
+      let approximate = false;
       let firstTitle = "";
       for (let i = 0; i < runs; i++) {
         const measured = await meter.measure(() => page.evaluate(async ({ q, size }) => {
@@ -135,6 +136,7 @@ async function runBackend(page, engine, queries, runs, size) {
           return {
             ms: performance.now() - t0,
             total: response.total,
+            approximate: !!response.approximate,
             firstTitle: response.results[0]?.title || "",
           };
         }, { q, size }));
@@ -143,6 +145,7 @@ async function runBackend(page, engine, queries, runs, size) {
         requests.push(measured.requests);
         transfers.push(measured.transfer);
         total = result.total;
+        approximate = result.approximate;
         firstTitle = result.firstTitle;
       }
       rows.push({
@@ -152,6 +155,7 @@ async function runBackend(page, engine, queries, runs, size) {
         initRequests: init.requests,
         initTransfer: init.transfer,
         total,
+        approximate,
         firstMs: times[0],
         firstRequests: requests[0],
         firstTransfer: transfers[0],
@@ -173,7 +177,8 @@ function printTable(rows) {
   console.log("| Engine | Query | Total | Init req | Init KB | First req | First KB | First ms | Median ms | P95 ms |");
   console.log("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|");
   for (const r of rows) {
-    console.log(`| ${r.engine} | ${r.q || "(empty)"} | ${r.total.toLocaleString("fr-CA")} | ${r.initRequests} | ${kb(r.initTransfer).toFixed(1)} | ${r.firstRequests} | ${kb(r.firstTransfer).toFixed(1)} | ${r.firstMs.toFixed(0)} | ${r.medianMs.toFixed(0)} | ${r.p95Ms.toFixed(0)} |`);
+    const total = `${r.total.toLocaleString("fr-CA")}${r.approximate ? "+" : ""}`;
+    console.log(`| ${r.engine} | ${r.q || "(empty)"} | ${total} | ${r.initRequests} | ${kb(r.initTransfer).toFixed(1)} | ${r.firstRequests} | ${kb(r.firstTransfer).toFixed(1)} | ${r.firstMs.toFixed(0)} | ${r.medianMs.toFixed(0)} | ${r.p95Ms.toFixed(0)} |`);
   }
 }
 

@@ -189,8 +189,8 @@ Après un moissonnage, relancer `npm run deploy` publie le site statique à jour
 | Hébergement | VPS / PaaS | GitHub Pages (gratuit, CDN) |
 | Coût mensuel | 0 – 5 $ | 0 $ |
 | Recherche | SQLite FTS5 (server) | tqsearch BM25F (browser) |
-| Latence requête | 10–50 ms (HTTP + SQL) | ~26–48 ms cold sur les requêtes bench, 0–4 ms warm |
-| Premier chargement | < 1 s | ~700 KB init search assets, chunks à la demande |
+| Latence requête | 10–50 ms (HTTP + SQL) | ~20–54 ms cold first paint sur les requêtes bench, 0–9 ms warm, puis affinage exact |
+| Premier chargement | < 1 s | ~160 KB init search assets, chunks à la demande |
 | Maintenance | Service à surveiller | Aucune |
 | Re-utilisation des données | API JSON | `tqsearch/` ouvert |
 

@@ -54,6 +54,9 @@ npm run bench:search:performance -- --url=http://localhost:5124/ --json
 
 The table reports:
 
+- `Total`: result count reported by the backend. A `+` suffix means a fast
+  lower-bound response; the UI issues an exact refinement after rendering the
+  first results.
 - `Init req` / `Init KB`: backend initialization requests and transfer size for
   the static engine files loaded before the first query.
 - `First req` / `First KB`: requests and transfer size observed during the first
@@ -102,8 +105,8 @@ JSON output to inspect disagreements before changing scoring.
 
 ## Recent Reference Runs
 
-Production `tqsearch` build after adding adaptive gzip term shards and
-compressed columnar code tables:
+Production `tqsearch` build after adding lazy code-table loading and
+block-bounded top-k over adaptive gzip term shards:
 
 ```text
 tqsearch known item: Hit@1 97.3%, Hit@3 99.3%, Hit@10 99.3%, MRR@10 0.983
@@ -113,10 +116,11 @@ tqsearch vs SQLite known-item Overlap@10: 88.1%
 tqsearch vs SQLite topical Overlap@10:    38.5%
 ```
 
-The same production build kept `tqsearch` warm-query medians around 0-4 ms for
-the default query set. `tqsearch` initialized with 6 search-asset requests /
-700.7 KB, and first-query shard/doc fetches for the default non-empty queries
-ranged from 5-12 requests / 228.0-523.6 KB / 26-48 ms.
+The same production build kept `tqsearch` warm-query medians around 0-9 ms for
+the default query set. `tqsearch` initialized with 4 search-asset requests /
+161.8 KB. Fast first-page responses for the default non-empty queries ranged
+from 5-12 requests / 229.1-528.9 KB / 20-54 ms and return lower-bound totals
+marked with `+`; the UI follows with an exact refinement for totals/facets.
 
 Latest Pagefind comparison from a `build:bench` artifact:
 
