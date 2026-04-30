@@ -53,13 +53,13 @@ jobs:
 
       - name: Stage as Pages artifact
         # actions/deploy-pages consumes an artifact named "github-pages"
-        # containing a single gzipped tar called "artifact.tar". Our
-        # release asset is already that exact format — just rename and
-        # upload, no extraction (which would defeat the whole point of
-        # building locally).
+        # containing a single *uncompressed* tar called "artifact.tar"
+        # (matches what actions/upload-pages-artifact produces). We ship
+        # gzipped over the wire to halve the upload, then gunzip here —
+        # still no full extraction of 187k Pagefind files.
         run: |
           mkdir -p _pages
-          mv dist.tar.gz _pages/artifact.tar
+          gunzip -c dist.tar.gz > _pages/artifact.tar
 
       - name: Upload Pages artifact
         uses: actions/upload-artifact@v4
