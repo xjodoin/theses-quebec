@@ -233,7 +233,7 @@ export async function bootstrap(backend, options = {}) {
   }
 
   // ---------------------------------------------------------- rendering ---
-  function renderResults(results) {
+  function renderResults(results, highlightQuery = state.q) {
     const ul = $("#results");
     ul.innerHTML = "";
     if (!results.length) {
@@ -276,11 +276,11 @@ export async function bootstrap(backend, options = {}) {
 
       const link = li.querySelector("[data-link]");
       link.href = r.url || "#";
-      link.innerHTML = highlight(r.title || "(sans titre)", state.q);
+      link.innerHTML = highlight(r.title || "(sans titre)", highlightQuery);
 
       const authors = li.querySelector("[data-authors]");
       authors.innerHTML = r.authors
-        ? highlight((r.authors.split(/;\s*/).slice(0, 4).join(" · ")), state.q)
+        ? highlight((r.authors.split(/;\s*/).slice(0, 4).join(" · ")), highlightQuery)
         : '<span class="text-ink-400 dark:text-ink-500 italic">auteur·rice non renseigné</span>';
 
       // Advisors: hidden by default in the template; show "Direction : …" when
@@ -289,7 +289,7 @@ export async function bootstrap(backend, options = {}) {
       if (advisors) {
         if (r.advisors) {
           const list = r.advisors.split(/;\s*/).slice(0, 3).join(" · ");
-          advisors.innerHTML = `<span class="text-ink-400 dark:text-ink-500">Direction&nbsp;:</span> ${highlight(list, state.q)}`;
+          advisors.innerHTML = `<span class="text-ink-400 dark:text-ink-500">Direction&nbsp;:</span> ${highlight(list, highlightQuery)}`;
           advisors.classList.remove("hidden");
         } else {
           advisors.classList.add("hidden");
@@ -298,7 +298,7 @@ export async function bootstrap(backend, options = {}) {
 
       const ab = li.querySelector("[data-abstract]");
       if (r.excerpt) ab.innerHTML = r.excerpt;
-      else if (r.abstract) ab.innerHTML = highlight(r.abstract, state.q);
+      else if (r.abstract) ab.innerHTML = highlight(r.abstract, highlightQuery);
       else ab.remove();
 
       li.querySelector("[data-source]").textContent = r.source_name || "";
@@ -712,7 +712,7 @@ export async function bootstrap(backend, options = {}) {
         if (set.size) vocabulary = [...set];
       }
 
-      renderResults(next.results);
+      renderResults(next.results, next.correctedQuery || state.q);
       renderPager(next.total, state.page, state.size);
       renderFacets(next.facets);
     };
