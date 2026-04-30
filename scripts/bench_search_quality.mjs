@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Quality benchmark for static search against SQLite FTS5.
+ * Quality benchmark for static search against SQLite FTS5 and Lucene.
  *
  * Requires a built dist/ and a local static server:
  *   PORT=5124 npm run serve
@@ -9,6 +9,12 @@
 
 import Database from "better-sqlite3";
 import { chromium } from "playwright-core";
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const DEFAULT_TOPICAL_QUERIES = [
   "sante",
@@ -60,10 +66,13 @@ function parseArgs(argv) {
   const args = {
     url: "http://localhost:5000/",
     db: "data/theses.db",
-    engines: ["tqsearch", "pagefind"],
+    engines: ["tqsearch", "pagefind", "lucene"],
     known: 150,
+    typos: 120,
     topical: DEFAULT_TOPICAL_QUERIES,
     size: 10,
+    variants: true,
+    exactCheck: 50,
     json: false,
   };
   for (const arg of argv) {
@@ -72,10 +81,28 @@ function parseArgs(argv) {
     else if (arg.startsWith("--db=")) args.db = arg.slice("--db=".length);
     else if (arg.startsWith("--engines=")) args.engines = arg.slice("--engines=".length).split(",").filter(Boolean);
     else if (arg.startsWith("--known=")) args.known = Number(arg.slice("--known=".length)) || args.known;
+    else if (arg.startsWith("--typos=")) args.typos = Number(arg.slice("--typos=".length)) || args.typos;
     else if (arg.startsWith("--topical=")) args.topical = arg.slice("--topical=".length).split("|").filter(Boolean);
     else if (arg.startsWith("--size=")) args.size = Number(arg.slice("--size=".length)) || args.size;
+    else if (arg === "--no-variants") args.variants = false;
+    else if (arg.startsWith("--exact-check=")) args.exactCheck = Number(arg.slice("--exact-check=".length)) || 0;
   }
   return args;
+}
+
+function expandEngineSpecs(engines, variants) {
+  const specs = [];
+  for (const engine of engines) {
+    if (engine === "tqsearch" && variants) {
+      specs.push({ label: "tqsearch-base", backend: "tqsearch", rerank: false });
+      specs.push({ label: "tqsearch", backend: "tqsearch", rerank: true });
+    } else if (engine === "lucene") {
+      specs.push({ label: "lucene", backend: "lucene", external: true });
+    } else {
+      specs.push({ label: engine, backend: engine, rerank: true });
+    }
+  }
+  return specs;
 }
 
 async function launchBrowser() {
@@ -135,6 +162,49 @@ function shuffle(values, seed = 12345) {
   return out;
 }
 
+function mutateToken(token, seed) {
+  if (token.length < 5) return token;
+  const innerStart = token.length > 6 ? 1 : 0;
+  const span = Math.max(1, token.length - innerStart - (token.length > 6 ? 1 : 0));
+  const pos = innerStart + (seed % span);
+  const op = seed % 4;
+  if (op === 0) {
+    return token.slice(0, pos) + token.slice(pos + 1);
+  }
+  if (op === 1 && pos < token.length - 1) {
+    return token.slice(0, pos) + token[pos + 1] + token[pos] + token.slice(pos + 2);
+  }
+  if (op === 2) {
+    const alphabet = "etaoinshrdlucmpgfbvyq";
+    const replacement = alphabet[(alphabet.indexOf(token[pos]) + seed + 7) % alphabet.length] || "e";
+    return token.slice(0, pos) + replacement + token.slice(pos + 1);
+  }
+  return token.slice(0, pos) + token[pos] + token.slice(pos);
+}
+
+function makeTypoQuery(q, seed) {
+  const parts = String(q || "").split(/\s+/).filter(Boolean);
+  const eligible = parts
+    .map((token, idx) => ({ token, idx }))
+    .filter(item => fold(item.token).length >= 5 && /^[a-z0-9]+$/u.test(fold(item.token)));
+  if (!eligible.length) return null;
+  eligible.sort((a, b) => b.token.length - a.token.length || a.idx - b.idx);
+  const selected = eligible[seed % Math.min(eligible.length, 3)];
+  const mutated = mutateToken(fold(selected.token), seed);
+  if (!mutated || mutated === fold(selected.token)) return null;
+  parts[selected.idx] = mutated;
+  return parts.join(" ");
+}
+
+function buildTypoKnownQueries(known, n) {
+  const out = [];
+  for (let i = 0; i < known.length && out.length < n; i++) {
+    const typoQ = makeTypoQuery(known[i].q, i + 17);
+    if (typoQ && typoQ !== known[i].q) out.push({ ...known[i], cleanQ: known[i].q, typoQ });
+  }
+  return out;
+}
+
 function rankIn(results, target) {
   const idx = results.findIndex(r =>
     (target.url && r.url === target.url)
@@ -158,11 +228,24 @@ function agreement(tq, sq) {
   const tqIds = tq.map(r => r.url || r.title || r.id);
   const sqIds = sq.map(r => r.url || r.title || r.id);
   const tqSet = new Set(tqIds);
+  const tqRank = new Map(tqIds.map((id, idx) => [id, idx]));
   const top1Rank = tqIds.indexOf(sqIds[0]) + 1;
   const overlap = sqIds.filter(id => tqSet.has(id)).length;
+  let dcg10 = 0;
+  let idcg10 = 0;
+  const idealDepth = Math.min(10, sqIds.length);
+  for (let i = 0; i < idealDepth; i++) {
+    const relevance = (idealDepth - i) / idealDepth;
+    idcg10 += relevance / Math.log2(i + 2);
+    const foundAt = tqRank.get(sqIds[i]);
+    if (foundAt != null && foundAt < 10) {
+      dcg10 += relevance / Math.log2(foundAt + 2);
+    }
+  }
   return {
     top1Rank,
     overlap10: overlap / Math.max(1, Math.min(10, sqIds.length)),
+    ndcg10: idcg10 ? dcg10 / idcg10 : 0,
   };
 }
 
@@ -175,6 +258,54 @@ function agreementMetrics(rows) {
     sqliteTop1At10: rows.filter(r => r.top1Rank > 0 && r.top1Rank <= 10).length / n,
     sqliteTop1Mrr10: rows.reduce((s, r) => s + (r.top1Rank ? 1 / r.top1Rank : 0), 0) / n,
     overlap10: rows.reduce((s, r) => s + r.overlap10, 0) / n,
+    ndcg10: rows.reduce((s, r) => s + r.ndcg10, 0) / n,
+  };
+}
+
+function average(values) {
+  const present = values.filter(value => Number.isFinite(value));
+  if (!present.length) return 0;
+  return present.reduce((sum, value) => sum + value, 0) / present.length;
+}
+
+function runtimeMetrics(rows) {
+  const n = rows.length || 1;
+  return {
+    n: rows.length,
+    approximateRate: rows.filter(row => row.approximate).length / n,
+    avgBlocksDecoded: average(rows.map(row => row.stats?.blocksDecoded)),
+    avgPostingsDecoded: average(rows.map(row => row.stats?.postingsDecoded)),
+    avgSkippedBlocks: average(rows.map(row => row.stats?.skippedBlocks)),
+    avgRerankCandidates: average(rows.map(row => row.stats?.rerankCandidates)),
+    avgDependencyHits: average(rows.map(row => row.stats?.dependencyCandidateMatches)),
+  };
+}
+
+function typoDiagnostics(rows) {
+  const n = rows.length || 1;
+  return {
+    n: rows.length,
+    appliedRate: rows.filter(row => row.stats?.typoApplied).length / n,
+    attemptedRate: rows.filter(row => row.stats?.typoAttempted).length / n,
+    avgCandidateTerms: average(rows.map(row => row.stats?.typoCandidateTerms)),
+    avgShardLookups: average(rows.map(row => row.stats?.typoShardLookups)),
+  };
+}
+
+function resultKeys(results) {
+  return results.map(r => r.url || r.title || r.id);
+}
+
+function exactAgreement(rows) {
+  const n = rows.length || 1;
+  return {
+    n: rows.length,
+    top1Match: rows.filter(row => row.fast[0] && row.fast[0] === row.exact[0]).length / n,
+    top10Match: rows.filter(row => JSON.stringify(row.fast) === JSON.stringify(row.exact)).length / n,
+    overlap10: rows.reduce((sum, row) => {
+      const exact = new Set(row.exact);
+      return sum + row.fast.filter(key => exact.has(key)).length / Math.max(1, row.exact.length);
+    }, 0) / n,
   };
 }
 
@@ -221,15 +352,15 @@ function makeSqliteSearch(db, size) {
   };
 }
 
-async function makeBrowserSearch(page, engine, size) {
-  const backendFile = `./backends/${engine}.js?quality=${Date.now()}`;
+async function makeBrowserSearch(page, spec, size) {
+  const backendFile = `./backends/${spec.backend}.js?quality=${Date.now()}`;
   await page.evaluate(async ({ backendFile }) => {
     const backend = (await import(backendFile)).default;
     await backend.init();
     window.__qualityBackend = backend;
   }, { backendFile });
 
-  return (q) => page.evaluate(async ({ q, size }) => {
+  return (q, options = {}) => page.evaluate(async ({ q, size, rerank, exact }) => {
     const response = await window.__qualityBackend.search({
       q,
       type: "",
@@ -240,9 +371,93 @@ async function makeBrowserSearch(page, engine, size) {
       source: new Set(),
       page: 1,
       size,
+      rerank,
+      exact,
     });
-    return response.results.map(r => ({ id: String(r.id), title: r.title, url: r.url }));
-  }, { q, size });
+    return {
+      total: response.total,
+      approximate: !!response.approximate,
+      stats: response.stats || {},
+      results: response.results.map(r => ({ id: String(r.id), title: r.title, url: r.url })),
+    };
+  }, { q, size, rerank: spec.rerank, exact: !!options.exact });
+}
+
+async function makeLuceneSearch(dbPath, size) {
+  const pom = resolve(ROOT, "scripts/lucene-bench/pom.xml");
+  const proc = spawn("mvn", [
+    "-q",
+    "-f",
+    pom,
+    "exec:java",
+    `-Dexec.args=${resolve(ROOT, dbPath)} ${size}`,
+  ], {
+    cwd: ROOT,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  const pending = [];
+  let stderr = "";
+  let ready = false;
+  let readyResolve;
+  let readyReject;
+  const readyPromise = new Promise((resolveReady, rejectReady) => {
+    readyResolve = resolveReady;
+    readyReject = rejectReady;
+  });
+
+  proc.stderr.on("data", chunk => {
+    stderr = (stderr + chunk.toString()).slice(-8000);
+  });
+
+  const lines = createInterface({ input: proc.stdout, crlfDelay: Infinity });
+  lines.on("line", line => {
+    if (!ready) {
+      if (line.trim() === "READY") {
+        ready = true;
+        readyResolve();
+      }
+      return;
+    }
+    const next = pending.shift();
+    if (!next) return;
+    try {
+      next.resolve(JSON.parse(line));
+    } catch (error) {
+      next.reject(new Error(`Invalid Lucene response: ${line}\n${error.message}`));
+    }
+  });
+
+  proc.on("exit", code => {
+    const error = code === 0 ? null : new Error(`Lucene bench exited with ${code}\n${stderr}`);
+    if (!ready && error) readyReject(error);
+    while (pending.length) {
+      pending.shift().reject(error || new Error("Lucene bench closed before returning a result"));
+    }
+  });
+
+  await readyPromise;
+
+  const search = (q) => new Promise((resolveSearch, rejectSearch) => {
+    pending.push({
+      resolve: response => resolveSearch({
+        total: response.total || 0,
+        approximate: false,
+        stats: { lucene: true },
+        results: (response.results || []).map(r => ({ id: String(r.id), title: r.title, url: r.url })),
+      }),
+      reject: rejectSearch,
+    });
+    proc.stdin.write(`${Buffer.from(q, "utf8").toString("base64")}\n`);
+  });
+
+  return {
+    search,
+    close() {
+      proc.stdin.end();
+      proc.kill();
+    },
+  };
 }
 
 function printSummary(report) {
@@ -253,10 +468,30 @@ function printSummary(report) {
     console.log(`| ${engine} | ${m.n} | ${(m.hit1 * 100).toFixed(1)}% | ${(m.hit3 * 100).toFixed(1)}% | ${(m.hit10 * 100).toFixed(1)}% | ${m.mrr10.toFixed(3)} |`);
   }
   console.log("\nAgreement with SQLite top 10");
-  console.log("| Set | n | SQLite top1@1 | SQLite top1@3 | SQLite top1@10 | Overlap@10 |");
-  console.log("|---|---:|---:|---:|---:|---:|");
+  console.log("| Set | n | SQLite top1@1 | SQLite top1@3 | SQLite top1@10 | Overlap@10 | NDCG@10 |");
+  console.log("|---|---:|---:|---:|---:|---:|---:|");
   for (const [name, m] of Object.entries(report.agreement)) {
-    console.log(`| ${name} | ${m.n} | ${(m.sqliteTop1At1 * 100).toFixed(1)}% | ${(m.sqliteTop1At3 * 100).toFixed(1)}% | ${(m.sqliteTop1At10 * 100).toFixed(1)}% | ${(m.overlap10 * 100).toFixed(1)}% |`);
+    console.log(`| ${name} | ${m.n} | ${(m.sqliteTop1At1 * 100).toFixed(1)}% | ${(m.sqliteTop1At3 * 100).toFixed(1)}% | ${(m.sqliteTop1At10 * 100).toFixed(1)}% | ${(m.overlap10 * 100).toFixed(1)}% | ${(m.ndcg10 * 100).toFixed(1)}% |`);
+  }
+  console.log("\nTypo recovery");
+  console.log("| Engine | n | Target Hit@1 | Target Hit@3 | Target Hit@10 | MRR@10 | Clean top1@10 | Clean NDCG@10 | Applied | Candidates | Shards |");
+  console.log("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+  for (const [engine, m] of Object.entries(report.typoRecovery.metrics)) {
+    const clean = report.typoRecovery.cleanAgreement[engine] || {};
+    const diag = report.typoRecovery.diagnostics[engine] || {};
+    console.log(`| ${engine} | ${m.n} | ${(m.hit1 * 100).toFixed(1)}% | ${(m.hit3 * 100).toFixed(1)}% | ${(m.hit10 * 100).toFixed(1)}% | ${m.mrr10.toFixed(3)} | ${((clean.sqliteTop1At10 || 0) * 100).toFixed(1)}% | ${((clean.ndcg10 || 0) * 100).toFixed(1)}% | ${((diag.appliedRate || 0) * 100).toFixed(1)}% | ${(diag.avgCandidateTerms || 0).toFixed(1)} | ${(diag.avgShardLookups || 0).toFixed(1)} |`);
+  }
+  console.log("\nFast vs exact agreement");
+  console.log("| Engine | n | Top1 match | Top10 exact match | Overlap@10 |");
+  console.log("|---|---:|---:|---:|---:|");
+  for (const [engine, m] of Object.entries(report.fastExactAgreement)) {
+    console.log(`| ${engine} | ${m.n} | ${(m.top1Match * 100).toFixed(1)}% | ${(m.top10Match * 100).toFixed(1)}% | ${(m.overlap10 * 100).toFixed(1)}% |`);
+  }
+  console.log("\nRuntime diagnostics");
+  console.log("| Engine | n | Approx | Avg blocks | Avg postings | Avg skipped | Avg rerank | Avg dep hits |");
+  console.log("|---|---:|---:|---:|---:|---:|---:|---:|");
+  for (const [engine, m] of Object.entries(report.runtime)) {
+    console.log(`| ${engine} | ${m.n} | ${(m.approximateRate * 100).toFixed(1)}% | ${m.avgBlocksDecoded.toFixed(1)} | ${m.avgPostingsDecoded.toFixed(0)} | ${m.avgSkippedBlocks.toFixed(1)} | ${m.avgRerankCandidates.toFixed(1)} | ${m.avgDependencyHits.toFixed(1)} |`);
   }
 }
 
@@ -264,28 +499,50 @@ const args = parseArgs(process.argv.slice(2));
 const db = new Database(args.db, { readonly: true });
 const sqliteSearch = makeSqliteSearch(db, args.size);
 const known = buildKnownItemQueries(db, args.known).filter(q => sqliteSearch(q.q).length);
+const typoKnown = buildTypoKnownQueries(known, args.typos);
+const specs = expandEngineSpecs(args.engines, args.variants);
 
-const browser = await launchBrowser();
+const needsBrowser = specs.some(spec => !spec.external);
+const needsLucene = specs.some(spec => spec.backend === "lucene");
+const browser = needsBrowser ? await launchBrowser() : null;
+const lucene = needsLucene ? await makeLuceneSearch(args.db, args.size) : null;
 try {
   const report = {
     knownItem: { metrics: { sqlite: null }, missesWhereSqliteFound: {} },
     agreement: {},
+    typoRecovery: { metrics: {}, cleanAgreement: {}, diagnostics: {}, examples: {} },
+    fastExactAgreement: {},
+    runtime: {},
     topicalExamples: {},
   };
 
   const sqliteKnownRanks = known.map(target => rankIn(sqliteSearch(target.q), target));
   report.knownItem.metrics.sqlite = metrics(sqliteKnownRanks);
+  report.typoRecovery.metrics.sqlite = metrics(typoKnown.map(target => rankIn(sqliteSearch(target.typoQ), target)));
+  report.typoRecovery.cleanAgreement.sqlite = agreementMetrics(
+    typoKnown.map(target => agreement(sqliteSearch(target.typoQ), sqliteSearch(target.cleanQ))),
+  );
+  report.typoRecovery.diagnostics.sqlite = typoDiagnostics([]);
 
-  for (const engine of args.engines) {
-    const page = await browser.newPage();
-    await page.goto(args.url, { waitUntil: "domcontentloaded" });
-    const search = await makeBrowserSearch(page, engine, args.size);
+  for (const spec of specs) {
+    let page = null;
+    let search;
+    if (spec.backend === "lucene") {
+      search = lucene.search;
+    } else {
+      page = await browser.newPage();
+      await page.goto(args.url, { waitUntil: "domcontentloaded" });
+      search = await makeBrowserSearch(page, spec, args.size);
+    }
 
     const ranks = [];
     const knownAgreement = [];
     const misses = [];
+    const runtimeRows = [];
     for (const target of known) {
-      const engineResults = await search(target.q);
+      const engineResponse = await search(target.q);
+      runtimeRows.push(engineResponse);
+      const engineResults = engineResponse.results;
       const sqliteResults = sqliteSearch(target.q);
       const rank = rankIn(engineResults, target);
       const sqliteRank = rankIn(sqliteResults, target);
@@ -300,14 +557,16 @@ try {
         });
       }
     }
-    report.knownItem.metrics[engine] = metrics(ranks);
-    report.agreement[`${engine}: known-item`] = agreementMetrics(knownAgreement);
-    report.knownItem.missesWhereSqliteFound[engine] = misses.slice(0, 10);
+    report.knownItem.metrics[spec.label] = metrics(ranks);
+    report.agreement[`${spec.label}: known-item`] = agreementMetrics(knownAgreement);
+    report.knownItem.missesWhereSqliteFound[spec.label] = misses.slice(0, 10);
 
     const topicalAgreement = [];
     const examples = [];
     for (const q of args.topical) {
-      const engineResults = await search(q);
+      const engineResponse = await search(q);
+      runtimeRows.push(engineResponse);
+      const engineResults = engineResponse.results;
       const sqliteResults = sqliteSearch(q);
       const a = agreement(engineResults, sqliteResults);
       topicalAgreement.push(a);
@@ -319,14 +578,61 @@ try {
         sqliteTop1: sqliteResults[0]?.title || null,
       });
     }
-    report.agreement[`${engine}: topical`] = agreementMetrics(topicalAgreement);
-    report.topicalExamples[engine] = examples;
-    await page.close();
+    report.agreement[`${spec.label}: topical`] = agreementMetrics(topicalAgreement);
+    report.topicalExamples[spec.label] = examples;
+
+    const typoRanks = [];
+    const typoCleanAgreement = [];
+    const typoRows = [];
+    const typoExamples = [];
+    for (const target of typoKnown) {
+      const typoResponse = await search(target.typoQ);
+      const cleanResponse = await search(target.cleanQ);
+      runtimeRows.push(typoResponse);
+      typoRows.push(typoResponse);
+      const rank = rankIn(typoResponse.results, target);
+      typoRanks.push(rank);
+      const a = agreement(typoResponse.results, cleanResponse.results);
+      typoCleanAgreement.push(a);
+      if (typoExamples.length < 10 && (!rank || a.top1Rank !== 1)) {
+        typoExamples.push({
+          cleanQ: target.cleanQ,
+          typoQ: target.typoQ,
+          title: target.title,
+          rank: rank || null,
+          cleanTop1InTypoRank: a.top1Rank || null,
+          typoTop1: typoResponse.results[0]?.title || null,
+          cleanTop1: cleanResponse.results[0]?.title || null,
+          corrections: typoResponse.stats?.typoCorrections || null,
+        });
+      }
+    }
+    report.typoRecovery.metrics[spec.label] = metrics(typoRanks);
+    report.typoRecovery.cleanAgreement[spec.label] = agreementMetrics(typoCleanAgreement);
+    report.typoRecovery.diagnostics[spec.label] = typoDiagnostics(typoRows);
+    report.typoRecovery.examples[spec.label] = typoExamples;
+    report.runtime[spec.label] = runtimeMetrics(runtimeRows);
+
+    if (spec.backend === "tqsearch") {
+      const exactRows = [];
+      const exactQueries = [
+        ...known.slice(0, Math.max(0, args.exactCheck - args.topical.length)).map(item => item.q),
+        ...args.topical,
+      ].slice(0, args.exactCheck);
+      for (const q of exactQueries) {
+        const fast = await search(q);
+        const exact = await search(q, { exact: true });
+        exactRows.push({ q, fast: resultKeys(fast.results), exact: resultKeys(exact.results) });
+      }
+      report.fastExactAgreement[spec.label] = exactAgreement(exactRows);
+    }
+    if (page) await page.close();
   }
 
   if (args.json) console.log(JSON.stringify(report, null, 2));
   else printSummary(report);
 } finally {
-  await browser.close();
+  if (lucene) lucene.close();
+  if (browser) await browser.close();
   db.close();
 }

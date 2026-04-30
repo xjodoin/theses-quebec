@@ -6,8 +6,10 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:expanded": "node scripts/build.mjs --with-sparse-expansion",
     "build:bench": "node scripts/build.mjs --with-pagefind",
     "build:tqsearch": "node scripts/build_tqsearch.mjs",
+    "search:expand": "node scripts/generate_tqsearch_sparse_expansions.mjs",
     "bench:search:performance": "node scripts/bench_search_performance.mjs",
     "bench:search:quality": "node scripts/bench_search_quality.mjs",
     "serve": "node scripts/serve.mjs",

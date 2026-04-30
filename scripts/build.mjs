@@ -7,6 +7,9 @@
  *
  * Benchmark builds can also include Pagefind for comparison:
  *   node scripts/build.mjs --with-pagefind
+ *
+ * Experimental builds can bake generated sparse expansion into tqsearch:
+ *   node scripts/build.mjs --with-sparse-expansion
  */
 
 import Database from "better-sqlite3";
@@ -27,6 +30,9 @@ const DB_PATH = resolve(ROOT, "data/theses.db");
 const DIST = resolve(ROOT, "dist");
 const PAGEFIND_DIR = resolve(DIST, "pagefind");
 const WITH_PAGEFIND = process.argv.includes("--with-pagefind") || process.argv.includes("--pagefind");
+const WITH_SPARSE_EXPANSION = process.argv.includes("--with-sparse-expansion")
+  || process.env.TQSEARCH_WITH_SPARSE_EXPANSION === "1";
+const SPARSE_EXPANSION_PATH = resolve(DIST, "_tqsearch_sparse_expansions.jsonl");
 
 const ABSTRACT_LIMIT = 900;
 const INITIAL_RESULT_LIMIT = 50;
@@ -151,6 +157,10 @@ Sitemap: https://xjodoin.github.io/theses-quebec/sitemap.xml
   writeFileSync(resolve(DIST, ".nojekyll"), "");
 }
 
+function shellQuote(value) {
+  return JSON.stringify(String(value));
+}
+
 async function buildPagefind() {
   const pagefind = await import("pagefind");
   mkdirSync(PAGEFIND_DIR, { recursive: true });
@@ -236,8 +246,19 @@ async function buildPagefind() {
   await pagefind.close();
 }
 
+let tqsearchArgs = "";
+if (WITH_SPARSE_EXPANSION) {
+  console.log("▸ Generating TQSearch sparse expansion terms");
+  execSync(`node scripts/generate_tqsearch_sparse_expansions.mjs --out=${shellQuote(SPARSE_EXPANSION_PATH)}`, {
+    stdio: "inherit",
+    cwd: ROOT,
+  });
+  tqsearchArgs = ` --sparse-expansions=${shellQuote(SPARSE_EXPANSION_PATH)}`;
+}
+
 console.log("▸ Building TQSearch production index");
-execSync("node scripts/build_tqsearch.mjs", { stdio: "inherit", cwd: ROOT });
+execSync(`node scripts/build_tqsearch.mjs${tqsearchArgs}`, { stdio: "inherit", cwd: ROOT });
+rmSync(SPARSE_EXPANSION_PATH, { force: true });
 
 const manifest = JSON.parse(readFileSync(resolve(DIST, "tqsearch/manifest.json"), "utf8"));
 writeStaticShell(manifest);

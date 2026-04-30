@@ -23,6 +23,9 @@ data/theses.db-shm
 node_modules/
 dist/
 
+# Java benchmark build output
+target/
+
 # tooling caches
 .playwright-mcp/
 .claude/
