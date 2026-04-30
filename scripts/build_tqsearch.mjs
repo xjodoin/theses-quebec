@@ -40,7 +40,7 @@ const MIN_TOKEN_LENGTH = 2;
 const BM25F_K1 = 1.2;
 const TITLE_SHINGLE_WEIGHT = 10;
 const POSTING_FLUSH_LINES = 100000;
-const TERM_SHARD_FORMAT = "tqsbin-v2";
+const TERM_SHARD_FORMAT = "tqsbin-v3";
 const TERM_SHARD_COMPRESSION = "gzip";
 const TERM_SHARD_MAGIC = [0x54, 0x51, 0x53, 0x42]; // TQSB
 const POSTING_BLOCK_SIZE = 128;
@@ -51,6 +51,12 @@ const CODE_FORMAT = "tqcodes-v1";
 const CODE_COMPRESSION = "gzip";
 const CODE_MAGIC = [0x54, 0x51, 0x43, 0x42]; // TQCB
 const CODE_FIELDS = ["source", "discipline", "type", "decade", "year"];
+const BLOCK_FILTER_CONFIG = [
+  { name: "source", kind: "facet", codeField: "source" },
+  { name: "discipline", kind: "facet", codeField: "discipline" },
+  { name: "type", kind: "facet", codeField: "type" },
+  { name: "year", kind: "number", codeField: "year" },
+];
 const textEncoder = new TextEncoder();
 
 const FIELDS = [
@@ -346,7 +352,60 @@ function pushVarint(out, value) {
   out.push(n);
 }
 
-function encodePostings(rows, total) {
+function hasBit(words, value) {
+  const word = Math.floor(value / 32);
+  const bit = value % 32;
+  return Math.floor((words[word] || 0) / (2 ** bit)) % 2 === 1;
+}
+
+function addBit(words, value) {
+  if (value < 0) return;
+  const word = Math.floor(value / 32);
+  const bit = value % 32;
+  if (!hasBit(words, value)) words[word] += 2 ** bit;
+}
+
+function emptyBlockFilters(blockFilters) {
+  return blockFilters.map(filter => {
+    if (filter.kind === "facet") return { words: new Array(filter.words).fill(0) };
+    return { min: 0, max: 0 };
+  });
+}
+
+function updateBlockFilters(summary, blockFilters, codes, doc) {
+  for (let i = 0; i < blockFilters.length; i++) {
+    const filter = blockFilters[i];
+    const value = codes[filter.code_field || filter.codeField][doc] || 0;
+    if (filter.kind === "facet") {
+      addBit(summary[i].words, value);
+    } else if (value) {
+      summary[i].min = summary[i].min ? Math.min(summary[i].min, value) : value;
+      summary[i].max = Math.max(summary[i].max, value);
+    }
+  }
+}
+
+function buildBlockFilterDefs(dicts) {
+  return BLOCK_FILTER_CONFIG.map(filter => {
+    if (filter.kind === "facet") {
+      const cardinality = dicts[filter.codeField]?.values?.length || 0;
+      return {
+        name: filter.name,
+        kind: filter.kind,
+        code_field: filter.codeField,
+        cardinality,
+        words: Math.max(1, Math.ceil(cardinality / 32)),
+      };
+    }
+    return {
+      name: filter.name,
+      kind: filter.kind,
+      code_field: filter.codeField,
+    };
+  });
+}
+
+function encodePostings(rows, total, codes, blockFilters) {
   const df = rows.length;
   const idf = Math.log(1 + (total - df + 0.5) / (df + 0.5));
   const encoded = rows
@@ -357,21 +416,22 @@ function encodePostings(rows, total) {
   for (let i = 0; i < encoded.length; i++) {
     const [doc, impact] = encoded[i];
     if (i % POSTING_BLOCK_SIZE === 0) {
-      blocks.push({ offset: bytes.length, maxImpact: impact });
+      blocks.push({ offset: bytes.length, maxImpact: impact, filters: emptyBlockFilters(blockFilters) });
     }
+    updateBlockFilters(blocks[blocks.length - 1].filters, blockFilters, codes, doc);
     pushVarint(bytes, doc);
     pushVarint(bytes, impact);
   }
   return { df, count: encoded.length, bytes: Uint8Array.from(bytes), blocks };
 }
 
-function buildTermShard(entries, total) {
+function buildTermShard(entries, total, codes, blockFilters) {
   const directory = [];
   const postingChunks = [];
   let postingOffset = 0;
 
   for (const [term, rows] of entries.sort((a, b) => a[0].localeCompare(b[0]))) {
-    const postings = encodePostings(rows, total);
+    const postings = encodePostings(rows, total, codes, blockFilters);
     const termBytes = textEncoder.encode(term);
     directory.push({
       termBytes,
@@ -399,6 +459,16 @@ function buildTermShard(entries, total) {
     for (const block of entry.blocks) {
       pushVarint(header, block.offset);
       pushVarint(header, block.maxImpact);
+      for (let i = 0; i < blockFilters.length; i++) {
+        const filter = blockFilters[i];
+        const summary = block.filters[i];
+        if (filter.kind === "facet") {
+          for (const word of summary.words) pushVarint(header, word);
+        } else {
+          pushVarint(header, summary.min);
+          pushVarint(header, summary.max);
+        }
+      }
     }
   }
 
@@ -477,7 +547,7 @@ function buildCodesFile(codes, total) {
   ]);
 }
 
-async function reduceShard(shard, total) {
+async function reduceShard(shard, total, codes, blockFilters) {
   const path = resolve(RUNS_OUT, `${shard}.tsv`);
   const byTerm = new Map();
   const rl = createInterface({ input: createReadStream(path), crlfDelay: Infinity });
@@ -495,7 +565,7 @@ async function reduceShard(shard, total) {
   let postings = 0;
   for (const rows of byTerm.values()) postings += rows.length;
   for (const partition of partitions) {
-    const shardBuffer = buildTermShard(partition.entries, total);
+    const shardBuffer = buildTermShard(partition.entries, total, codes, blockFilters);
     writeFileSync(
       resolve(TERMS_OUT, `${partition.name}.bin.gz`),
       gzipSync(shardBuffer, { level: 6 }),
@@ -506,14 +576,14 @@ async function reduceShard(shard, total) {
   return { terms: byTerm.size, postings, shards: finalShards };
 }
 
-async function reducePostingRuns(total, shardNames) {
+async function reducePostingRuns(total, shardNames, codes, blockFilters) {
   console.log("▸ Reducing posting runs into term shards");
   const t0 = performance.now();
   let termCount = 0;
   let postingCount = 0;
   const finalShardNames = new Set();
   for (let i = 0; i < shardNames.length; i++) {
-    const stats = await reduceShard(shardNames[i], total);
+    const stats = await reduceShard(shardNames[i], total, codes, blockFilters);
     termCount += stats.terms;
     postingCount += stats.postings;
     for (const shard of stats.shards) finalShardNames.add(shard);
@@ -533,7 +603,8 @@ console.log(`  ${total.toLocaleString()} records available`);
 const avgLens = measureAvgLens(db, total);
 const { dicts, codes, initialResults, shardNames } = buildPostingRuns(db, total, avgLens);
 db.close();
-const reduction = await reducePostingRuns(total, shardNames);
+const blockFilters = buildBlockFilterDefs(dicts);
+const reduction = await reducePostingRuns(total, shardNames, codes, blockFilters);
 
 const sources = facetRows(dicts.source);
 const builtAt = new Date().toISOString();
@@ -555,6 +626,7 @@ const manifest = {
     type: dicts.type.values,
     decade: dicts.decade.values,
   },
+  block_filters: blockFilters,
   shards: reduction.shardNames,
   stats: {
     terms: reduction.termCount,

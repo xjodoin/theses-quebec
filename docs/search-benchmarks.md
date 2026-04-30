@@ -48,6 +48,12 @@ npm run bench:search:performance -- --url=http://localhost:5124/ --engines=tqsea
 npm run bench:search:performance -- --url=http://localhost:5124/ \
   --queries='sante|education|diabete type 1|intelligence artificielle'
 
+# Filtered search path. Separate multi-select filters with |
+npm run bench:search:performance -- --url=http://localhost:5124/ \
+  --engines=tqsearch \
+  --queries='sante|education|intelligence artificielle|diabete type 1' \
+  --source=udem --discipline='Psychologie' --year-min=2010
+
 # Machine-readable output
 npm run bench:search:performance -- --url=http://localhost:5124/ --json
 ```
@@ -105,7 +111,7 @@ JSON output to inspect disagreements before changing scoring.
 
 ## Recent Reference Runs
 
-Production `tqsearch` build after adding lazy code-table loading and
+Production `tqsearch` build after adding generic per-block filter summaries and
 block-bounded top-k over adaptive gzip term shards:
 
 ```text
@@ -118,9 +124,23 @@ tqsearch vs SQLite topical Overlap@10:    38.5%
 
 The same production build kept `tqsearch` warm-query medians around 0-9 ms for
 the default query set. `tqsearch` initialized with 4 search-asset requests /
-161.8 KB. Fast first-page responses for the default non-empty queries ranged
-from 5-12 requests / 229.1-528.9 KB / 20-54 ms and return lower-bound totals
+164.3 KB. Fast first-page responses for the default non-empty queries ranged
+from 5-12 requests / 240.2-561.3 KB / 24-63 ms and return lower-bound totals
 marked with `+`; the UI follows with an exact refinement for totals/facets.
+
+Filtered fast-path run with `--source=udem --discipline='Psychologie'
+--year-min=2010`:
+
+```text
+sante: 210+ results, 12 requests / 681.8 KB / 45 ms first run
+education: 29+ results, 11 requests / 388.6 KB / 39 ms first run
+intelligence artificielle: 7+ results, 8 requests / 304.7 KB / 36 ms first run
+diabete type 1: 1+ results, 4 requests / 316.7 KB / 18 ms first run
+```
+
+For those filtered queries, fast top 10 matched exact top 10. The generic block
+filter summaries skipped 7, 66, 6, and 46 candidate blocks respectively before
+decoding.
 
 Latest Pagefind comparison from a `build:bench` artifact:
 

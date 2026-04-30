@@ -27,6 +27,13 @@ function parseArgs(argv) {
     queries: DEFAULT_QUERIES,
     runs: 3,
     size: 10,
+    filters: {
+      type: "",
+      year_min: null,
+      year_max: null,
+      discipline: [],
+      source: [],
+    },
     json: false,
   };
   for (const arg of argv) {
@@ -36,6 +43,11 @@ function parseArgs(argv) {
     else if (arg.startsWith("--queries=")) args.queries = arg.slice("--queries=".length).split("|");
     else if (arg.startsWith("--runs=")) args.runs = Number(arg.slice("--runs=".length)) || args.runs;
     else if (arg.startsWith("--size=")) args.size = Number(arg.slice("--size=".length)) || args.size;
+    else if (arg.startsWith("--type=")) args.filters.type = arg.slice("--type=".length);
+    else if (arg.startsWith("--year-min=")) args.filters.year_min = Number(arg.slice("--year-min=".length)) || null;
+    else if (arg.startsWith("--year-max=")) args.filters.year_max = Number(arg.slice("--year-max=".length)) || null;
+    else if (arg.startsWith("--discipline=")) args.filters.discipline = arg.slice("--discipline=".length).split("|").filter(Boolean);
+    else if (arg.startsWith("--source=")) args.filters.source = arg.slice("--source=".length).split("|").filter(Boolean);
   }
   return args;
 }
@@ -99,7 +111,7 @@ function createNetworkMeter(page) {
   };
 }
 
-async function runBackend(page, engine, queries, runs, size) {
+async function runBackend(page, engine, queries, runs, size, filters) {
   const meter = createNetworkMeter(page);
   const backendFile = `./backends/${engine}.js?perf=${Date.now()}`;
   const init = await meter.measure(() => page.evaluate(async ({ backendFile }) => {
@@ -120,16 +132,16 @@ async function runBackend(page, engine, queries, runs, size) {
       let approximate = false;
       let firstTitle = "";
       for (let i = 0; i < runs; i++) {
-        const measured = await meter.measure(() => page.evaluate(async ({ q, size }) => {
+        const measured = await meter.measure(() => page.evaluate(async ({ q, size, filters }) => {
           const t0 = performance.now();
           const response = await window.__benchBackend.search({
             q,
-            type: "",
-            year_min: null,
-            year_max: null,
+            type: filters.type,
+            year_min: filters.year_min,
+            year_max: filters.year_max,
             sort: "relevance",
-            discipline: new Set(),
-            source: new Set(),
+            discipline: new Set(filters.discipline),
+            source: new Set(filters.source),
             page: 1,
             size,
           });
@@ -139,7 +151,7 @@ async function runBackend(page, engine, queries, runs, size) {
             approximate: !!response.approximate,
             firstTitle: response.results[0]?.title || "",
           };
-        }, { q, size }));
+        }, { q, size, filters }));
         const result = measured.value;
         times.push(result.ms);
         requests.push(measured.requests);
@@ -190,7 +202,7 @@ try {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(args.url, { waitUntil: "domcontentloaded" });
-    allRows.push(...await runBackend(page, engine, args.queries, args.runs, args.size));
+    allRows.push(...await runBackend(page, engine, args.queries, args.runs, args.size, args.filters));
     await context.close();
   }
   if (args.json) console.log(JSON.stringify(allRows, null, 2));

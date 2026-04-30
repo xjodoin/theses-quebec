@@ -38,10 +38,20 @@ The build emits:
 
 Each term shard has a compact term directory followed by varint-encoded
 `[docIndex, impact]` postings. Directory entries include 128-posting block
-metadata with each block's byte offset and max remaining impact. The browser
-fetches the compressed shard, inflates it with the browser's native
-`DecompressionStream`, parses the directory, and decodes postings lazily only
-for query terms.
+metadata with each block's byte offset, max remaining impact, and generic filter
+summaries. The browser fetches the compressed shard, inflates it with the
+browser's native `DecompressionStream`, parses the directory, and decodes
+postings lazily only for query terms.
+
+Block filter summaries are schema-driven, not hardcoded into the shard logic.
+The current site config emits:
+
+- Facet bitsets for `source`, `discipline`, and `type`.
+- Numeric min/max ranges for `year`.
+
+For another corpus, a standalone builder can provide a different
+`block_filters` schema while keeping the same shard format and runtime
+interpreter.
 
 Shard keys are adaptive. The builder first writes temporary three-character
 posting runs, then splits only oversized prefixes to four or five characters
@@ -49,12 +59,14 @@ before writing final shards. Common prefixes such as `int` and `app` therefore
 no longer force the browser to download every term with that prefix, while
 uncommon prefixes keep the simpler three-character layout.
 
-For first-page, unfiltered relevance searches, the runtime uses the block
-metadata as an impact-ordered top-k bound. It decodes the highest-impact blocks
-first and stops when no unseen or partially seen document can enter the current
-top results. That response carries lower-bound totals and global facets so it
-can render immediately. The UI then issues an exact refinement request, which
-loads `codes.bin.gz` only if needed and updates exact totals/facets.
+For first-page relevance searches, the runtime uses the block metadata as an
+impact-ordered top-k bound. With active filters, it first checks the generic
+block summaries and skips blocks whose facet bitsets or numeric ranges cannot
+match the query. It then decodes the highest-impact remaining blocks and stops
+when no unseen or partially seen document can enter the current top results.
+That response carries lower-bound totals and global facets so it can render
+immediately. The UI then issues an exact refinement request, which loads
+`codes.bin.gz` only if needed and updates exact totals/facets.
 
 ## Scalable Builder
 
@@ -89,8 +101,8 @@ postings in memory.
 
 ## Next Engine Work
 
-- Extend block-max top-k to filtered searches by adding small per-block facet
-  summaries or filter bitsets.
+- Move the generic engine pieces into a standalone package with a public schema
+  for ranking fields, result fields, filters, and block summaries.
 - Add delta coding for doc IDs in optional document-ordered posting blocks while
   preserving the current impact-ordered path for fast first results.
 - Add an optional offline sparse-expansion hook. The output should be just extra

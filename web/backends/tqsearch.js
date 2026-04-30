@@ -126,10 +126,24 @@ function parseShard(buffer) {
     const blockCount = readVarint(bytes, state);
     entry.blocks = new Array(blockCount);
     for (let j = 0; j < blockCount; j++) {
-      entry.blocks[j] = {
+      const block = {
         offset: readVarint(bytes, state),
         maxImpact: readVarint(bytes, state),
+        filters: {},
       };
+      for (const filter of (manifest.block_filters || [])) {
+        if (filter.kind === "facet") {
+          const words = new Array(filter.words);
+          for (let w = 0; w < filter.words; w++) words[w] = readVarint(bytes, state);
+          block.filters[filter.name] = { words };
+        } else {
+          block.filters[filter.name] = {
+            min: readVarint(bytes, state),
+            max: readVarint(bytes, state),
+          };
+        }
+      }
+      entry.blocks[j] = block;
     }
   }
   return { bytes, dataStart: state.pos, terms };
@@ -203,23 +217,39 @@ function decodePosting(shard, entry) {
   return { df: entry.df, p };
 }
 
-function createPostingCursor(shard, entry, termIndex, isBase) {
+function createPostingCursor(shard, entry, termIndex, isBase, blockMayPass = null) {
   return {
     shard,
     entry,
     termIndex,
     isBase,
+    blockMayPass,
     blockIndex: 0,
     decoded: 0,
     pos: shard.dataStart + entry.offset,
+    skippedBlocks: 0,
   };
 }
 
+function advanceCursorToCandidateBlock(cursor) {
+  while (cursor.blockMayPass) {
+    const block = cursor.entry.blocks[cursor.blockIndex];
+    if (!block || cursor.blockMayPass(block)) return;
+    cursor.blockIndex++;
+    cursor.decoded = Math.min(cursor.entry.count, cursor.blockIndex * cursor.entry.blockSize);
+    const next = cursor.entry.blocks[cursor.blockIndex];
+    cursor.pos = cursor.shard.dataStart + cursor.entry.offset + (next?.offset ?? cursor.entry.byteLength);
+    cursor.skippedBlocks++;
+  }
+}
+
 function cursorRemainingMax(cursor) {
+  advanceCursorToCandidateBlock(cursor);
   return cursor.entry.blocks[cursor.blockIndex]?.maxImpact || 0;
 }
 
 function decodeCursorBlock(cursor) {
+  advanceCursorToCandidateBlock(cursor);
   const { entry, shard } = cursor;
   const block = entry.blocks[cursor.blockIndex];
   if (!block) return [];
@@ -357,6 +387,89 @@ function hasActiveFilters({ type, year_min, year_max, discipline, source }) {
   return !!type || !!year_min || !!year_max || selectedSize(discipline) > 0 || selectedSize(source) > 0;
 }
 
+function bitIsSet(words, value) {
+  const word = Math.floor(value / 32);
+  const bit = value % 32;
+  return Math.floor((words[word] || 0) / (2 ** bit)) % 2 === 1;
+}
+
+function addBit(words, value) {
+  if (value < 0) return;
+  const word = Math.floor(value / 32);
+  const bit = value % 32;
+  if (!bitIsSet(words, value)) words[word] += 2 ** bit;
+}
+
+function wordsIntersect(a, b) {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    let left = a[i] || 0;
+    let right = b[i] || 0;
+    while (left && right) {
+      const leftBit = left % 2;
+      const rightBit = right % 2;
+      if (leftBit && rightBit) return true;
+      left = Math.floor(left / 2);
+      right = Math.floor(right / 2);
+    }
+  }
+  return false;
+}
+
+function codeSetToWords(codes, wordCount) {
+  const words = new Array(wordCount).fill(0);
+  for (const code of codes || []) addBit(words, code);
+  return words;
+}
+
+function makeFilterPlan({ type, year_min, year_max, discipline, source }) {
+  const filters = new Map();
+  const sourceCodes = selectedCodes("source", source);
+  const disciplineCodes = selectedCodes("discipline", discipline);
+  const typeCodes = type ? selectedCodes("type", new Set([type])) : null;
+  const lo = year_min ? Number(year_min) : null;
+  const hi = year_max ? Number(year_max) : null;
+
+  for (const filter of (manifest.block_filters || [])) {
+    if (filter.kind === "facet") {
+      const codesForField = filter.name === "source" ? sourceCodes
+        : filter.name === "discipline" ? disciplineCodes
+        : filter.name === "type" ? typeCodes
+        : null;
+      if (codesForField?.size) {
+        filters.set(filter.name, {
+          kind: "facet",
+          words: codeSetToWords(codesForField, filter.words),
+        });
+      }
+    } else if (filter.name === "year" && (lo || hi)) {
+      filters.set(filter.name, {
+        kind: "number",
+        min: lo || 0,
+        max: hi || Infinity,
+      });
+    }
+  }
+
+  return {
+    active: filters.size > 0,
+    filters,
+  };
+}
+
+function blockMatchesFilterPlan(block, plan) {
+  if (!plan?.active) return true;
+  for (const [name, filter] of plan.filters) {
+    const summary = block.filters?.[name];
+    if (!summary) continue;
+    if (filter.kind === "facet") {
+      if (!wordsIntersect(summary.words, filter.words)) return false;
+    } else if ((summary.max || 0) < filter.min || (summary.min || Infinity) > filter.max) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function minShouldMatchFor(baseTerms) {
   return baseTerms.length <= 4 ? baseTerms.length : baseTerms.length - 1;
 }
@@ -384,9 +497,15 @@ function collectEligibleScores(scores, hits, minShouldMatch) {
 function remainingPotential(cursors, mask = 0) {
   let potential = 0;
   for (const cursor of cursors) {
-    if ((mask & (1 << cursor.termIndex)) === 0) potential += cursorRemainingMax(cursor);
+    if (!bitIsSet([mask], cursor.termIndex)) potential += cursorRemainingMax(cursor);
   }
   return potential;
+}
+
+function cursorStats(cursors) {
+  return {
+    skippedBlocks: cursors.reduce((sum, cursor) => sum + cursor.skippedBlocks, 0),
+  };
 }
 
 function stableTopK(scores, hits, masks, cursors, minShouldMatch, k) {
@@ -408,7 +527,56 @@ function stableTopK(scores, hits, masks, cursors, minShouldMatch, k) {
   return { top, totalLowerBound: eligible.length };
 }
 
-async function fastTopKSearch({ baseTerms, terms, page, size }) {
+function applyDecodedRows(cursor, rows, scores, hits, masks, passesDoc) {
+  const bit = cursor.termIndex < FAST_TOPK_MAX_TERMS ? 2 ** cursor.termIndex : 0;
+  let accepted = 0;
+  for (const [doc, impact] of rows) {
+    if (passesDoc && !passesDoc(doc)) continue;
+    scores.set(doc, (scores.get(doc) || 0) + impact);
+    if (bit) {
+      const mask = masks.get(doc) || 0;
+      if (!bitIsSet([mask], cursor.termIndex)) masks.set(doc, mask + bit);
+    }
+    if (cursor.isBase) hits.set(doc, (hits.get(doc) || 0) + 1);
+    accepted++;
+  }
+  return accepted;
+}
+
+async function scorePostingsWithBlocks({ baseTerms, terms, filterPlan = null, passesDoc = null }) {
+  const baseTermSet = new Set(baseTerms);
+  const entries = await termEntriesForTerms(terms);
+  const blockMayPass = filterPlan?.active ? block => blockMatchesFilterPlan(block, filterPlan) : null;
+  const cursors = entries.map(({ term, shard, entry }, termIndex) =>
+    createPostingCursor(shard, entry, termIndex, baseTermSet.has(term), blockMayPass));
+  const scores = new Map();
+  const hits = new Map();
+  const masks = new Map();
+  let blocksDecoded = 0;
+  let postingsDecoded = 0;
+  let postingsAccepted = 0;
+
+  while (true) {
+    let best = null;
+    for (const cursor of cursors) {
+      const max = cursorRemainingMax(cursor);
+      if (max > 0 && (!best || max > best.max)) best = { cursor, max };
+    }
+    if (!best) break;
+
+    const rows = decodeCursorBlock(best.cursor);
+    postingsDecoded += rows.length;
+    postingsAccepted += applyDecodedRows(best.cursor, rows, scores, hits, masks, passesDoc);
+    blocksDecoded++;
+  }
+
+  return {
+    scored: collectEligibleScores(scores, hits, minShouldMatchFor(baseTerms)),
+    stats: { blocksDecoded, postingsDecoded, postingsAccepted, ...cursorStats(cursors), exact: true },
+  };
+}
+
+async function fastTopKSearch({ baseTerms, terms, page, size, filterPlan = null, passesDoc = null }) {
   const k = page * size;
   if (!baseTerms.length || k > FAST_TOPK_MAX_RESULTS || terms.length > FAST_TOPK_MAX_TERMS) return null;
 
@@ -416,14 +584,16 @@ async function fastTopKSearch({ baseTerms, terms, page, size }) {
   const entries = await termEntriesForTerms(terms);
   if (!entries.length || entries.length > FAST_TOPK_MAX_TERMS) return null;
 
+  const blockMayPass = filterPlan?.active ? block => blockMatchesFilterPlan(block, filterPlan) : null;
   const cursors = entries.map(({ term, shard, entry }, termIndex) =>
-    createPostingCursor(shard, entry, termIndex, baseTermSet.has(term)));
+    createPostingCursor(shard, entry, termIndex, baseTermSet.has(term), blockMayPass));
   const scores = new Map();
   const hits = new Map();
   const masks = new Map();
   const minShouldMatch = minShouldMatchFor(baseTerms);
   let blocksDecoded = 0;
   let postingsDecoded = 0;
+  let postingsAccepted = 0;
 
   while (true) {
     let best = null;
@@ -434,13 +604,9 @@ async function fastTopKSearch({ baseTerms, terms, page, size }) {
     if (!best) break;
 
     const cursor = best.cursor;
-    const bit = 1 << cursor.termIndex;
-    for (const [doc, impact] of decodeCursorBlock(cursor)) {
-      scores.set(doc, (scores.get(doc) || 0) + impact);
-      masks.set(doc, (masks.get(doc) || 0) | bit);
-      if (cursor.isBase) hits.set(doc, (hits.get(doc) || 0) + 1);
-      postingsDecoded++;
-    }
+    const rows = decodeCursorBlock(cursor);
+    postingsDecoded += rows.length;
+    postingsAccepted += applyDecodedRows(cursor, rows, scores, hits, masks, passesDoc);
     blocksDecoded++;
 
     if (blocksDecoded % FAST_TOPK_CHECK_BLOCKS === 0) {
@@ -449,7 +615,7 @@ async function fastTopKSearch({ baseTerms, terms, page, size }) {
         return {
           scored: stable.top,
           totalLowerBound: stable.totalLowerBound,
-          stats: { blocksDecoded, postingsDecoded, exact: false },
+          stats: { blocksDecoded, postingsDecoded, postingsAccepted, ...cursorStats(cursors), exact: false },
         };
       }
     }
@@ -459,7 +625,7 @@ async function fastTopKSearch({ baseTerms, terms, page, size }) {
   return {
     scored,
     totalLowerBound: scored.length,
-    stats: { blocksDecoded, postingsDecoded, exact: true },
+    stats: { blocksDecoded, postingsDecoded, postingsAccepted, ...cursorStats(cursors), exact: true },
   };
 }
 
@@ -472,6 +638,7 @@ async function exactSearch({ q, type, year_min, year_max, sort, discipline, sour
   const filtersActive = hasActiveFilters({ type, year_min, year_max, discipline, source });
   const needsCodeBeforeScoring = filtersActive || sort === "year_desc" || sort === "year_asc" || !baseTerms.length;
   const codeData = needsCodeBeforeScoring ? await codeDataPromise : null;
+  const filterPlan = filtersActive ? makeFilterPlan({ type, year_min, year_max, discipline, source }) : null;
   const passesFilters = filtersActive
     ? makeFilterPredicate({ type, year_min, year_max, discipline, source }, codeData)
     : () => true;
@@ -481,6 +648,14 @@ async function exactSearch({ q, type, year_min, year_max, sort, discipline, sour
     scored = allDocIds(manifest.total)
       .filter(passesFilters)
       .map(doc => ({ doc, score: 0 }));
+  } else if (filtersActive && filterPlan?.active) {
+    const scoredResult = await scorePostingsWithBlocks({
+      baseTerms,
+      terms,
+      filterPlan,
+      passesDoc: passesFilters,
+    });
+    scored = scoredResult.scored;
   } else {
     const scores = new Map();
     const hits = new Map();
@@ -540,10 +715,16 @@ export default {
 
     const baseTerms = tokenize(query);
     const terms = queryTerms(query);
+    const filtersActive = hasActiveFilters({ type, year_min, year_max, discipline, source });
 
     if (!exact && query && page === 1 && (!sort || sort === "relevance")
-      && !hasActiveFilters({ type, year_min, year_max, discipline, source })) {
-      const fast = await fastTopKSearch({ baseTerms, terms, page, size });
+    ) {
+      const codeData = filtersActive ? await loadCodes() : null;
+      const filterPlan = filtersActive ? makeFilterPlan({ type, year_min, year_max, discipline, source }) : null;
+      const passesFilters = filtersActive
+        ? makeFilterPredicate({ type, year_min, year_max, discipline, source }, codeData)
+        : null;
+      const fast = await fastTopKSearch({ baseTerms, terms, page, size, filterPlan, passesDoc: passesFilters });
       if (fast && fast.scored.length >= Math.min(size, fast.totalLowerBound)) {
         const visible = fast.scored.slice(start, start + size);
         const results = await Promise.all(visible.map(r => loadDoc(r.doc)));
