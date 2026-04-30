@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 /**
- * Build the static site locally, package dist/ as a gzipped tar, and
- * publish it as a GitHub Release asset. The repo workflow
- * `.github/workflows/pages.yml` listens for `pages-*` releases and hands
- * the asset to actions/deploy-pages.
+ * Build the static site locally, package dist/ as a gzipped tar,
+ * publish it as a GitHub Release asset, and trigger pages.yml to
+ * deploy it.
  *
  *   node scripts/deploy.mjs                 # build + release
  *   node scripts/deploy.mjs --skip-build    # release existing dist/
@@ -23,6 +22,12 @@
  *   `npm run db:fetch` resolves the DB asset via "latest release"; if a
  *   pages-* release stole the latest flag, db:fetch would 404. Pages
  *   deploys are looked up by tag in the workflow, so they don't need it.
+ *
+ * Why workflow_dispatch instead of `release: published`:
+ *   The github-pages environment's default protection rule only allows
+ *   deployments from the default branch. Release-event runs use the tag
+ *   ref and get rejected. workflow_dispatch always runs on the default
+ *   branch.
  */
 import { execSync, spawnSync } from "node:child_process";
 import {
@@ -141,7 +146,10 @@ try {
         `--title "${title}" --notes-file "${notesPath}" --latest=false`,
     );
   }
-  console.log(`\n✓ Released ${tag} — pages.yml will pick it up`);
+
+  console.log(`▸ Triggering pages.yml workflow for ${tag}`);
+  sh(`gh workflow run pages.yml --field tag="${tag}"`);
+  console.log(`\n✓ Released ${tag} and dispatched deploy workflow`);
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
