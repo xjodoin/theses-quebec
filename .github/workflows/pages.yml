@@ -1,10 +1,8 @@
 name: Deploy to GitHub Pages
 
-# `scripts/deploy.mjs` builds dist/ locally (Pagefind's 187k-file
-# writeFiles stalls on GHA shared disk), uploads the tar.gz as a
-# `pages-*` release asset, then triggers this workflow with the release
-# tag as input. The workflow downloads the asset and hands it to
-# actions/deploy-pages.
+# `scripts/deploy.mjs` can build dist/ locally, upload the tar.gz as a
+# `pages-*` release asset, then trigger this workflow with the release tag
+# as input. Without a tag, the workflow builds tqsearch from main directly.
 #
 # We use workflow_dispatch (not `release: published`) because
 # release-event workflows run on the tag ref; the github-pages
@@ -16,11 +14,20 @@ name: Deploy to GitHub Pages
 #   Settings → Pages → Source: "GitHub Actions"
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "data/theses.db"
+      - "web/**"
+      - "scripts/**"
+      - "package*.json"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to deploy (e.g. pages-2026-04-29-2030)"
-        required: true
+        description: "Optional release tag to deploy (e.g. pages-2026-04-29-2030); blank builds from main"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -34,12 +41,13 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Download release asset
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -49,24 +57,54 @@ jobs:
             --pattern 'dist.tar.gz.sha256'
 
       - name: Verify checksum
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' }}
         run: sha256sum -c dist.tar.gz.sha256
 
       - name: Stage as Pages artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' }}
         # actions/deploy-pages consumes an artifact named "github-pages"
         # containing a single *uncompressed* tar called "artifact.tar"
         # (matches what actions/upload-pages-artifact produces). We ship
-        # gzipped over the wire to halve the upload, then gunzip here —
-        # still no full extraction of 187k Pagefind files.
+        # gzipped over the wire to halve the upload, then gunzip here without
+        # extracting the static search shard tree on the runner.
         run: |
           mkdir -p _pages
           gunzip -c dist.tar.gz > _pages/artifact.tar
 
       - name: Upload Pages artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: github-pages
           path: _pages/artifact.tar
           retention-days: 1
+
+      - name: Checkout
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup Node
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
+        run: npm ci
+
+      - name: Build tqsearch site
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
+        run: npm run build
+
+      - name: Upload built Pages artifact
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
 
       - name: Deploy to GitHub Pages
         id: deployment

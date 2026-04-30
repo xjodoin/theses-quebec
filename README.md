@@ -97,12 +97,12 @@ batch LLM.
     ┌──────────────────┐                  ┌──────────────────┐
     │ Variante FastAPI │                  │ Variante statique│
     │ api/app.py       │                  │ scripts/build.mjs│
-    │ /api/search …    │                  │ → dist/pagefind/ │
+    │ /api/search …    │                  │ → dist/tqsearch/ │
     └────────┬─────────┘                  └────────┬─────────┘
              ▼                                     ▼
     ┌──────────────────┐                  ┌──────────────────┐
     │ web/common.js    │  partagé →       │ web/common.js    │
-    │ + backends/fast… │                  │ + backends/page… │
+    │ + backends/fast… │                  │ + backends/tq…   │
     └──────────────────┘                  └──────────────────┘
 ```
 
@@ -110,7 +110,7 @@ batch LLM.
 |---|---|---|
 | Moissonneur | Python + `requests` + Playwright | OAI-PMH partout sauf McGill (WAF Azure → vraie session navigateur) |
 | Index serveur | SQLite **FTS5** | Aucun service externe ; tokenizer `unicode61 remove_diacritics` |
-| Index statique | **Pagefind** (WASM, chunked) | ~50 KB initial, chargement à la demande, scaling à 177 k records |
+| Index statique | **tqsearch** | BM25F statique par défaut, Pagefind disponible seulement pour les benchmarks |
 | Classification | 3-pass règles + Gemini 3 Flash batch | Auth → règles primaires → règles+abstract → LLM pour le résidu |
 | API | FastAPI | Auto-doc OpenAPI sur `/docs` |
 | UI | Tailwind CDN, vanilla JS, ES modules | Aucun build, `web/common.js` partagé entre les deux variantes |
@@ -150,39 +150,49 @@ Pour publier une nouvelle version après un harvest : `npm run db:release`.
 
 ## Build statique pour GitHub Pages
 
-Une seconde version 100 % statique est générée à chaque push : **Pagefind**
-découpe l'index plein-texte en chunks WASM *à la compilation* ; le navigateur
-ne charge que ~50 KB initial puis fetch à la demande les chunks qui
-correspondent à la requête (typ. 100–300 KB par session). **Recherche locale,
-sans serveur, hébergement gratuit sur GitHub Pages, scaling à 177 k records.**
+Une seconde version 100 % statique est générée à chaque push. Le backend de
+production est le prototype **tqsearch** (index BM25F statique en shards).
+**Pagefind** n'est plus inclus dans le build Pages par défaut ; il sert
+seulement aux builds de benchmark.
+**Recherche locale, sans serveur, hébergement gratuit sur GitHub Pages, scaling
+à 187 k records.**
 
 ```bash
 # Installer Node 20+ et les deps
 npm install
 
-# Builder dist/ (lit data/theses.db, produit dist/{index.html,pagefind/,meta.json})
+# Builder dist/ pour Pages (lit data/theses.db, produit tqsearch seulement)
 npm run build
+
+# Builder dist/ avec Pagefind en plus, pour les comparaisons de benchmark
+npm run build:bench
 
 # Servir localement (http://localhost:5000)
 npm run serve
 ```
 
-Le déploiement Pages est automatique : le workflow
-[`.github/workflows/pages.yml`](.github/workflows/pages.yml) tourne à chaque
-push qui touche `data/theses.db`, `scripts/build.mjs` ou `web/static.html`.
+Les benchmarks de recherche sont documentés dans
+[`docs/search-benchmarks.md`](docs/search-benchmarks.md). Ils couvrent la
+latence navigateur et la qualité de ranking contre SQLite FTS5.
+Le prototype `tqsearch` est décrit dans
+[`docs/static-search-design.md`](docs/static-search-design.md).
 
-Le moissonnage hebdomadaire commit la DB rafraîchie → déclenche Pages → le
-site est à jour automatiquement.
+Le déploiement Pages peut être déclenché directement par
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml), qui reconstruit
+`tqsearch` depuis `main`. `npm run deploy` reste disponible pour publier un
+artifact local via une release `pages-*`.
+
+Après un moissonnage, relancer `npm run deploy` publie le site statique à jour.
 
 | Caractéristique | Version FastAPI | Version statique (Pages) |
 |---|---|---|
 | Hébergement | VPS / PaaS | GitHub Pages (gratuit, CDN) |
 | Coût mensuel | 0 – 5 $ | 0 $ |
-| Recherche | SQLite FTS5 (server) | Pagefind (WASM chunks, browser) |
-| Latence requête | 10–50 ms (HTTP + SQL) | 30–80 ms (premier fetch chunk) |
-| Premier chargement | < 1 s | ~50 KB index entry (chunks à la demande) |
+| Recherche | SQLite FTS5 (server) | tqsearch BM25F (browser) |
+| Latence requête | 10–50 ms (HTTP + SQL) | ~26–48 ms cold sur les requêtes bench, 0–4 ms warm |
+| Premier chargement | < 1 s | ~700 KB init search assets, chunks à la demande |
 | Maintenance | Service à surveiller | Aucune |
-| Re-utilisation des données | API JSON | `pagefind/` + `meta.json` ouverts |
+| Re-utilisation des données | API JSON | `tqsearch/` ouvert |
 
 ---
 
@@ -286,11 +296,13 @@ theses-quebec/
 │   ├── common.js             UI partagée (search loop, facettes, modal, citations)
 │   ├── backends/
 │   │   ├── fastapi.js        Adapter pour /api/search
-│   │   └── pagefind.js       Adapter pour le bundle Pagefind
+│   │   ├── tqsearch.js       Adapter pour l'index statique BM25F
+│   │   └── pagefind.js       Adapter de benchmark pour le bundle Pagefind
 │   ├── index.html            Frontend pour la version FastAPI
 │   └── static.html           Frontend pour la version statique (Pages)
 ├── scripts/
-│   ├── build.mjs             SQLite → Pagefind chunks → dist/
+│   ├── build.mjs             SQLite → tqsearch → dist/
+│   ├── build_tqsearch.mjs    Builder BM25F statique file-backed
 │   ├── serve.mjs             Serveur local de prévisualisation
 │   ├── fetch_db.mjs          gh release download → zstd -d → data/theses.db
 │   └── release_db.mjs        slim FTS5 + zstd → gh release create db-YYYY-MM-DD
@@ -328,8 +340,8 @@ Voir [`.env.example`](.env.example) pour le modèle.
 
 Trois voies typiques, par ordre croissant de complexité :
 
-- **GitHub Pages (statique)** — déjà en place. `npm run build` → push →
-  déploiement auto. Coût : 0 $. Voir
+- **GitHub Pages (statique)** — déjà en place. `npm run deploy` construit,
+  publie une release `pages-*`, puis déclenche Pages. Coût : 0 $. Voir
   [Build statique pour GitHub Pages](#build-statique-pour-github-pages).
 - **Fly.io free tier** — Dockerfile + `fly.toml`, volume persistant pour le
   SQLite, machine planifiée pour le harvest. Coût : 0–3 $/mois.

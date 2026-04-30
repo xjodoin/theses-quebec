@@ -556,11 +556,13 @@ tailwind.config = {
 </template>
 
 
-<!-- Pagefind: a chunked, WASM-based search engine. The build at scripts/build.mjs
-     populates dist/pagefind/ alongside this HTML. -->
+<!-- Static search backend. Bench builds can use ?engine=pagefind for comparison. -->
 <!-- Single source of truth: shared UI in web/common.js, backend selected here. -->
 <script type="module">
-import backend from "./backends/pagefind.js";
+const engine = new URLSearchParams(location.search).get("engine") === "pagefind"
+  ? "pagefind"
+  : "tqsearch";
+const { default: backend } = await import(`./backends/${engine}.js`);
 import { bootstrap } from "./common.js";
 bootstrap(backend);
 </script>
