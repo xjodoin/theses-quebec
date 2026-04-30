@@ -40,7 +40,6 @@ const TYPO_FALLBACK_MIN_TOTAL = 1;
 const TYPO_MAX_QUERY_TERMS = 8;
 const TYPO_MAX_TOKEN_CANDIDATES = 64;
 const TYPO_MIN_ACCEPT_SCORE = 0.5;
-const TYPO_PRESENT_DF_PROTECT = 50;
 const TYPO_SURFACE_SEPARATOR = "\u0001";
 const TYPO_SHARD_MAGIC = [0x54, 0x51, 0x54, 0x42]; // TQTB
 const TYPO_RANGE_MERGE_GAP_BYTES = 8 * 1024;
@@ -860,7 +859,7 @@ async function correctedTypoQuery(baseTerms, presentTerms = new Map(), analyzedT
     const item = terms[index];
     const token = item.term;
     const presentDf = presentTerms.get(token) || 0;
-    if (presentDf > 0 && (hasMissingTerms || presentDf >= TYPO_PRESENT_DF_PROTECT)) continue;
+    if (presentDf > 0 && hasMissingTerms) continue;
     const candidates = await typoCandidatesForToken(item.raw, debug);
     const accepted = candidates
       .filter(candidate => candidate.score >= TYPO_MIN_ACCEPT_SCORE)
