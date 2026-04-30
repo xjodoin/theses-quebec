@@ -1,25 +1,22 @@
 name: Deploy to GitHub Pages
 
-# Construit le site statique (SQLite → Pagefind chunks → dist/) et le
-# déploie sur GitHub Pages. Se déclenche :
-#   - à chaque push sur main qui touche au code source
-#   - à chaque release `db-*` publiée (le harvest hebdomadaire publie une
-#     nouvelle release → redéploie)
-#   - manuellement via l'onglet Actions
+# Triggered when `scripts/deploy.mjs` publishes a `pages-*` release from
+# a developer's machine. We don't build on the runner — Pagefind's
+# 187k-file writeFiles stalls on shared disk (~22 min, hit the timeout).
+# The release ships a pre-built tar.gz; this workflow just hands it to
+# actions/deploy-pages.
+#
+# Repo setup:
+#   Settings → Pages → Source: "GitHub Actions"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "scripts/build.mjs"
-      - "scripts/fetch_db.mjs"
-      - "web/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/pages.yml"
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to deploy (e.g. pages-2026-04-29-2030)"
+        required: true
 
 permissions:
   contents: read
@@ -31,59 +28,54 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 1
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "24"
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install zstd
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq zstd
-
-      - name: Fetch DB from latest release
-        env:
-          # gh CLI is preinstalled on ubuntu-latest; GITHUB_TOKEN suffices
-          # for downloads from the same repo.
-          GH_TOKEN: ${{ github.token }}
-        run: npm run db:fetch
-
-      - name: Build static site
-        # Pagefind's writeFiles holds the entire index in memory while serializing
-        # 187k+ records to ~840 MB of .pf_index chunks. Default Node heap (~4 GB
-        # on a 16 GB runner) sits right at the edge and the process was getting
-        # OOM-killed mid-write. Bump the old-space cap so the runner's headroom
-        # is what bounds us, not V8.
-        env:
-          NODE_OPTIONS: "--max-old-space-size=8192"
-        run: npm run build
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
   deploy:
-    needs: build
+    # Skip releases that aren't ours (e.g. db-*). workflow_dispatch always runs.
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'pages-') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.tag || github.event.release.tag_name }}"
+          if [ -z "$TAG" ]; then
+            echo "No tag resolved" >&2
+            exit 1
+          fi
+          echo "name=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ steps.tag.outputs.name }}" \
+            --repo "${{ github.repository }}" \
+            --pattern 'dist.tar.gz' \
+            --pattern 'dist.tar.gz.sha256'
+
+      - name: Verify checksum
+        run: sha256sum -c dist.tar.gz.sha256
+
+      - name: Stage as Pages artifact
+        # actions/deploy-pages consumes an artifact named "github-pages"
+        # containing a single gzipped tar called "artifact.tar". Our
+        # release asset is already that exact format — just rename and
+        # upload, no extraction (which would defeat the whole point of
+        # building locally).
+        run: |
+          mkdir -p _pages
+          mv dist.tar.gz _pages/artifact.tar
+
+      - name: Upload Pages artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-pages
+          path: _pages/artifact.tar
+          retention-days: 1
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
