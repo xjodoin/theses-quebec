@@ -225,6 +225,9 @@ copyFileSync(resolve(ROOT, "web/common.js"), resolve(DIST, "common.js"));
 mkdirSync(resolve(DIST, "backends"), { recursive: true });
 cpSync(resolve(ROOT, "web/backends"), resolve(DIST, "backends"), { recursive: true });
 
+console.log("▸ Building experimental TQSearch index");
+execSync("node scripts/build_tqsearch.mjs", { stdio: "inherit", cwd: ROOT });
+
 writeFileSync(
   resolve(DIST, "sitemap.xml"),
   `<?xml version="1.0" encoding="UTF-8"?>

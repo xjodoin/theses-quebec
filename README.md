@@ -167,6 +167,10 @@ npm run build
 npm run serve
 ```
 
+Les benchmarks de recherche sont documentés dans
+[`docs/search-benchmarks.md`](docs/search-benchmarks.md). Ils couvrent la
+latence navigateur et la qualité de ranking contre SQLite FTS5.
+
 Le déploiement Pages est automatique : le workflow
 [`.github/workflows/pages.yml`](.github/workflows/pages.yml) tourne à chaque
 push qui touche `data/theses.db`, `scripts/build.mjs` ou `web/static.html`.
