@@ -34,6 +34,9 @@ permissions:
   pages: write
   id-token: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -98,6 +101,8 @@ jobs:
 
       - name: Build tqsearch site
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: npm run build
 
       - name: Upload built Pages artifact
