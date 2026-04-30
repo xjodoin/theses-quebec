@@ -100,28 +100,32 @@ SQLite is a reference, not ground truth. Low agreement can mean the static
 backend is worse, but it can also mean the ranking objective differs. Use the
 JSON output to inspect disagreements before changing scoring.
 
-## Recent Reference Run
+## Recent Reference Runs
 
-On the current prototype branch after switching `tqsearch` to BM25F-style
-impact scoring, file-backed index construction, binary term shards, and smaller
-document payload chunks:
+Production `tqsearch` build after adding adaptive gzip term shards and
+compressed columnar code tables:
 
 ```text
 tqsearch known item: Hit@1 97.3%, Hit@3 99.3%, Hit@10 99.3%, MRR@10 0.983
 SQLite known item:   Hit@1 94.0%, Hit@3 99.3%, Hit@10 99.3%, MRR@10 0.963
-Pagefind known item: Hit@1 90.7%, Hit@3 97.3%, Hit@10 97.3%, MRR@10 0.939
 
 tqsearch vs SQLite known-item Overlap@10: 88.1%
 tqsearch vs SQLite topical Overlap@10:    38.5%
-Pagefind vs SQLite topical Overlap@10:    19.0%
 ```
 
-The same build kept `tqsearch` warm-query medians around 0-5 ms for the default
-query set. `tqsearch` initialized with 6 search-asset requests / 796.7 KB, and
-first-query shard/doc fetches for the default non-empty queries ranged from
-5-12 requests / 292.1-2195.5 KB / 24-47 ms. Pagefind initialized with 9
-requests / 2069.7 KB; its first-query network shape ranged from 10-15 requests /
-52.8-1911.8 KB / 223-4381 ms.
+The same production build kept `tqsearch` warm-query medians around 0-4 ms for
+the default query set. `tqsearch` initialized with 6 search-asset requests /
+700.7 KB, and first-query shard/doc fetches for the default non-empty queries
+ranged from 5-12 requests / 228.0-523.6 KB / 26-48 ms.
+
+Latest Pagefind comparison from a `build:bench` artifact:
+
+```text
+Pagefind known item: Hit@1 90.7%, Hit@3 97.3%, Hit@10 97.3%, MRR@10 0.939
+Pagefind vs SQLite topical Overlap@10: 19.0%
+Pagefind init: 9 requests / 2069.7 KB
+Pagefind first-query range: 10-15 requests / 52.8-1911.8 KB / 223-4381 ms
+```
 
 The implementation notes for the standalone static engine are in
 [`docs/static-search-design.md`](static-search-design.md).

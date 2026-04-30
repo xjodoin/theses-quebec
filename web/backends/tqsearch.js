@@ -70,8 +70,18 @@ function queryTerms(text) {
   return expanded;
 }
 
+function shardKey(term, depth) {
+  return String(term || "").slice(0, depth).padEnd(depth, "_");
+}
+
 function shardFor(term) {
-  return `${term[0] || "_"}${term[1] || "_"}${term[2] || "_"}`;
+  const maxDepth = manifest?.stats?.term_max_shard_depth || 5;
+  const baseDepth = manifest?.stats?.term_base_shard_depth || 3;
+  for (let depth = maxDepth; depth >= baseDepth; depth--) {
+    const key = shardKey(term, depth);
+    if (availableShards.has(key)) return key;
+  }
+  return shardKey(term, baseDepth);
 }
 
 function readVarint(bytes, state) {
@@ -110,6 +120,62 @@ function parseShard(buffer) {
   return { bytes, dataStart: state.pos, terms };
 }
 
+function parseCodes(buffer) {
+  const bytes = new Uint8Array(buffer);
+  if (bytes[0] !== 0x54 || bytes[1] !== 0x51 || bytes[2] !== 0x43 || bytes[3] !== 0x42) {
+    throw new Error("Unsupported tqsearch code table");
+  }
+
+  const state = { pos: 4 };
+  const total = readVarint(bytes, state);
+  const fieldCount = readVarint(bytes, state);
+  const fields = [];
+  for (let i = 0; i < fieldCount; i++) {
+    const len = readVarint(bytes, state);
+    const start = state.pos;
+    state.pos += len;
+    fields.push({
+      name: termDecoder.decode(bytes.subarray(start, state.pos)),
+      width: bytes[state.pos++],
+    });
+  }
+
+  const out = {};
+  for (const field of fields) {
+    if (field.width === 1) {
+      out[field.name] = bytes.slice(state.pos, state.pos + total);
+    } else {
+      const ArrayType = field.width === 2 ? Uint16Array : Uint32Array;
+      const values = new ArrayType(total);
+      for (let i = 0; i < total; i++) {
+        let value = 0;
+        for (let b = 0; b < field.width; b++) {
+          value += bytes[state.pos + i * field.width + b] * (2 ** (8 * b));
+        }
+        values[i] = value;
+      }
+      out[field.name] = values;
+    }
+    state.pos += total * field.width;
+  }
+  return out;
+}
+
+async function fetchGzipArrayBuffer(url) {
+  if (!("DecompressionStream" in globalThis)) {
+    const fallback = url.endsWith(".gz") ? url.slice(0, -3) : url;
+    const response = await fetch(fallback);
+    if (!response.ok) {
+      throw new Error("tqsearch compressed index requires DecompressionStream");
+    }
+    return response.arrayBuffer();
+  }
+
+  const response = await fetch(url);
+  if (!response.ok || !response.body) throw new Error(`Unable to fetch ${url}`);
+  return new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
+}
+
 function decodePosting(shard, entry) {
   if (entry.p) return { df: entry.df, p: entry.p };
   const p = new Int32Array(entry.count * 2);
@@ -131,7 +197,7 @@ async function loadCodes() {
 async function loadShard(shard) {
   if (!availableShards.has(shard)) return {};
   if (!shardCache.has(shard)) {
-    shardCache.set(shard, fetch(`./tqsearch/terms/${shard}.bin`).then(r => r.arrayBuffer()).then(parseShard));
+    shardCache.set(shard, fetchGzipArrayBuffer(`./tqsearch/terms/${shard}.bin.gz`).then(parseShard));
   }
   return shardCache.get(shard);
 }
@@ -234,7 +300,7 @@ export default {
   async init() {
     manifest = await fetch("./tqsearch/manifest.json").then(r => r.json());
     for (const shard of manifest.shards) availableShards.add(shard);
-    codesPromise = fetch("./tqsearch/codes.json").then(r => r.json());
+    codesPromise = fetchGzipArrayBuffer("./tqsearch/codes.bin.gz").then(parseCodes);
     codes = await codesPromise;
     return {
       total: manifest.total,

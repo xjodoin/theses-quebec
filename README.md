@@ -177,9 +177,10 @@ latence navigateur et la qualité de ranking contre SQLite FTS5.
 Le prototype `tqsearch` est décrit dans
 [`docs/static-search-design.md`](docs/static-search-design.md).
 
-Le déploiement Pages passe par `npm run deploy` : le script construit `dist/`
-localement, publie une release `pages-*`, puis déclenche
-[`.github/workflows/pages.yml`](.github/workflows/pages.yml).
+Le déploiement Pages peut être déclenché directement par
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml), qui reconstruit
+`tqsearch` depuis `main`. `npm run deploy` reste disponible pour publier un
+artifact local via une release `pages-*`.
 
 Après un moissonnage, relancer `npm run deploy` publie le site statique à jour.
 
@@ -188,8 +189,8 @@ Après un moissonnage, relancer `npm run deploy` publie le site statique à jour
 | Hébergement | VPS / PaaS | GitHub Pages (gratuit, CDN) |
 | Coût mensuel | 0 – 5 $ | 0 $ |
 | Recherche | SQLite FTS5 (server) | tqsearch BM25F (browser) |
-| Latence requête | 10–50 ms (HTTP + SQL) | ~25–50 ms cold sur les requêtes bench, 0–5 ms warm |
-| Premier chargement | < 1 s | ~800 KB init search assets, chunks à la demande |
+| Latence requête | 10–50 ms (HTTP + SQL) | ~26–48 ms cold sur les requêtes bench, 0–4 ms warm |
+| Premier chargement | < 1 s | ~700 KB init search assets, chunks à la demande |
 | Maintenance | Service à surveiller | Aucune |
 | Re-utilisation des données | API JSON | `tqsearch/` ouvert |
 

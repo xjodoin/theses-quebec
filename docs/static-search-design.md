@@ -28,18 +28,23 @@ The build emits:
 
 - `manifest.json`: total count, facets, source dictionaries, shard names, and
   the first default results.
-- `codes.json`: compact per-document facet/year codes for browser filtering and
-  facet counts.
+- `codes.bin.gz`: compressed columnar per-document facet/year codes for browser
+  filtering and facet counts.
 - `docs/*.json`: lazy-loaded result payload chunks. Chunks are intentionally
   small so rendering 10 search cards does not pull large unrelated payloads.
-- `terms/*.bin`: three-character binary term shards containing impact-sorted
-  postings.
+- `terms/*.bin.gz`: gzip-compressed binary term shards containing
+  impact-sorted postings.
 
 Each term shard has a compact term directory followed by varint-encoded
-`[docIndex, impact]` postings. The browser parses the directory when a shard is
-fetched and decodes postings lazily only for query terms. The current corpus
-builds 19,539 term shards; this keeps cold query downloads bounded for common
-prefixes while preserving a simple static-file layout.
+`[docIndex, impact]` postings. The browser fetches the compressed shard,
+inflates it with the browser's native `DecompressionStream`, parses the
+directory, and decodes postings lazily only for query terms.
+
+Shard keys are adaptive. The builder first writes temporary three-character
+posting runs, then splits only oversized prefixes to four or five characters
+before writing final shards. Common prefixes such as `int` and `app` therefore
+no longer force the browser to download every term with that prefix, while
+uncommon prefixes keep the simpler three-character layout.
 
 ## Scalable Builder
 
@@ -73,8 +78,8 @@ postings in memory.
 
 ## Next Engine Work
 
-- Add block metadata to the binary postings format and use it for safe
-  top-k skipping.
+- Add block metadata to the binary postings format and use it for safe top-k
+  skipping once the UI can accept approximate facet counts for early results.
 - Add delta coding for doc IDs in optional document-ordered posting blocks while
   preserving the current impact-ordered path for fast first results.
 - Add an optional offline sparse-expansion hook. The output should be just extra

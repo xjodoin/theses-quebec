@@ -21,6 +21,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import { createInterface } from "node:readline";
+import { gzipSync } from "node:zlib";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DB_PATH = resolve(ROOT, "data/theses.db");
@@ -40,7 +41,15 @@ const BM25F_K1 = 1.2;
 const TITLE_SHINGLE_WEIGHT = 10;
 const POSTING_FLUSH_LINES = 100000;
 const TERM_SHARD_FORMAT = "tqsbin-v1";
+const TERM_SHARD_COMPRESSION = "gzip";
 const TERM_SHARD_MAGIC = [0x54, 0x51, 0x53, 0x42]; // TQSB
+const BASE_SHARD_DEPTH = 3;
+const MAX_SHARD_DEPTH = 5;
+const TARGET_SHARD_POSTINGS = 30000;
+const CODE_FORMAT = "tqcodes-v1";
+const CODE_COMPRESSION = "gzip";
+const CODE_MAGIC = [0x54, 0x51, 0x43, 0x42]; // TQCB
+const CODE_FIELDS = ["source", "discipline", "type", "decade", "year"];
 const textEncoder = new TextEncoder();
 
 const FIELDS = [
@@ -204,9 +213,12 @@ function rowResult(r) {
   };
 }
 
+function shardKey(term, depth = BASE_SHARD_DEPTH) {
+  return String(term || "").slice(0, depth).padEnd(depth, "_");
+}
+
 function shardFor(term) {
-  if (!term) return "__";
-  return `${term[0] || "_"}${term[1] || "_"}${term[2] || "_"}`;
+  return shardKey(term, BASE_SHARD_DEPTH);
 }
 
 const SELECT_ROWS = `SELECT
@@ -383,6 +395,75 @@ function buildTermShard(entries, total) {
   ]);
 }
 
+function entryPostingCount(entries) {
+  return entries.reduce((sum, [, rows]) => sum + rows.length, 0);
+}
+
+function partitionTermEntries(entries, depth = BASE_SHARD_DEPTH) {
+  if (!entries.length) return [];
+  if (entryPostingCount(entries) <= TARGET_SHARD_POSTINGS || depth >= MAX_SHARD_DEPTH) {
+    return [{ name: shardKey(entries[0][0], depth), entries }];
+  }
+
+  const groups = new Map();
+  for (const entry of entries) {
+    const key = shardKey(entry[0], depth + 1);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  }
+
+  return [...groups.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .flatMap(([, group]) => partitionTermEntries(group, depth + 1));
+}
+
+function fixedWidth(values) {
+  let max = 0;
+  for (const value of values) {
+    if (value > max) max = value;
+  }
+  if (max <= 0xff) return 1;
+  if (max <= 0xffff) return 2;
+  return 4;
+}
+
+function writeFixedInt(buffer, offset, width, value) {
+  if (width === 1) {
+    buffer[offset] = value;
+  } else if (width === 2) {
+    buffer.writeUInt16LE(value, offset);
+  } else {
+    buffer.writeUInt32LE(value, offset);
+  }
+}
+
+function buildCodesFile(codes, total) {
+  const header = [...CODE_MAGIC];
+  const chunks = [];
+  pushVarint(header, total);
+  pushVarint(header, CODE_FIELDS.length);
+
+  for (const field of CODE_FIELDS) {
+    const values = codes[field];
+    const width = fixedWidth(values);
+    const nameBytes = textEncoder.encode(field);
+    pushVarint(header, nameBytes.length);
+    for (const b of nameBytes) header.push(b);
+    header.push(width);
+
+    const chunk = Buffer.alloc(total * width);
+    for (let i = 0; i < total; i++) {
+      writeFixedInt(chunk, i * width, width, values[i] || 0);
+    }
+    chunks.push(chunk);
+  }
+
+  return Buffer.concat([
+    Buffer.from(Uint8Array.from(header)),
+    ...chunks,
+  ]);
+}
+
 async function reduceShard(shard, total) {
   const path = resolve(RUNS_OUT, `${shard}.tsv`);
   const byTerm = new Map();
@@ -395,12 +476,21 @@ async function reduceShard(shard, total) {
     byTerm.get(term).push([Number(docRaw), Number(scoreRaw)]);
   }
 
+  const entries = [...byTerm.entries()];
+  const partitions = partitionTermEntries(entries);
+  const finalShards = [];
   let postings = 0;
   for (const rows of byTerm.values()) postings += rows.length;
-  const shardBuffer = buildTermShard([...byTerm.entries()], total);
-  writeFileSync(resolve(TERMS_OUT, `${shard}.bin`), shardBuffer);
+  for (const partition of partitions) {
+    const shardBuffer = buildTermShard(partition.entries, total);
+    writeFileSync(
+      resolve(TERMS_OUT, `${partition.name}.bin.gz`),
+      gzipSync(shardBuffer, { level: 6 }),
+    );
+    finalShards.push(partition.name);
+  }
   unlinkSync(path);
-  return { terms: byTerm.size, postings };
+  return { terms: byTerm.size, postings, shards: finalShards };
 }
 
 async function reducePostingRuns(total, shardNames) {
@@ -408,16 +498,18 @@ async function reducePostingRuns(total, shardNames) {
   const t0 = performance.now();
   let termCount = 0;
   let postingCount = 0;
+  const finalShardNames = new Set();
   for (let i = 0; i < shardNames.length; i++) {
     const stats = await reduceShard(shardNames[i], total);
     termCount += stats.terms;
     postingCount += stats.postings;
+    for (const shard of stats.shards) finalShardNames.add(shard);
     if ((i + 1) % 1000 === 0 || i + 1 === shardNames.length) {
       console.log(`  ... reduced ${(i + 1).toLocaleString()} / ${shardNames.length.toLocaleString()} shards`);
     }
   }
-  console.log(`  ${termCount.toLocaleString()} terms, ${postingCount.toLocaleString()} postings in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
-  return { termCount, postingCount };
+  console.log(`  ${termCount.toLocaleString()} terms, ${postingCount.toLocaleString()} postings into ${finalShardNames.size.toLocaleString()} shards in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+  return { termCount, postingCount, shardNames: [...finalShardNames].sort() };
 }
 
 console.log(`▸ Reading ${DB_PATH}`);
@@ -428,7 +520,7 @@ console.log(`  ${total.toLocaleString()} records available`);
 const avgLens = measureAvgLens(db, total);
 const { dicts, codes, initialResults, shardNames } = buildPostingRuns(db, total, avgLens);
 db.close();
-const { termCount, postingCount } = await reducePostingRuns(total, shardNames);
+const reduction = await reducePostingRuns(total, shardNames);
 
 const sources = facetRows(dicts.source);
 const builtAt = new Date().toISOString();
@@ -450,21 +542,27 @@ const manifest = {
     type: dicts.type.values,
     decade: dicts.decade.values,
   },
-  shards: shardNames,
+  shards: reduction.shardNames,
   stats: {
-    terms: termCount,
-    postings: postingCount,
+    terms: reduction.termCount,
+    postings: reduction.postingCount,
     max_terms_per_doc: MAX_TERMS_PER_DOC,
     abstract_display_limit: ABSTRACT_DISPLAY_LIMIT,
     abstract_index_limit: ABSTRACT_INDEX_LIMIT,
     scoring: "bm25f-impact-v1",
     builder: "file-backed-shard-runs-v1",
     term_shard_format: TERM_SHARD_FORMAT,
+    term_shard_compression: TERM_SHARD_COMPRESSION,
+    term_base_shard_depth: BASE_SHARD_DEPTH,
+    term_max_shard_depth: MAX_SHARD_DEPTH,
+    term_target_shard_postings: TARGET_SHARD_POSTINGS,
+    code_format: CODE_FORMAT,
+    code_compression: CODE_COMPRESSION,
   },
 };
 
 writeFileSync(resolve(OUT, "manifest.json"), JSON.stringify(manifest));
-writeFileSync(resolve(OUT, "codes.json"), JSON.stringify(codes));
+writeFileSync(resolve(OUT, "codes.bin.gz"), gzipSync(buildCodesFile(codes, total), { level: 9 }));
 rmSync(WORK_OUT, { recursive: true, force: true });
 
 let outSize = "?";
