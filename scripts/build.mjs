@@ -155,6 +155,17 @@ Sitemap: https://xjodoin.github.io/theses-quebec/sitemap.xml
 <p>Page introuvable. <a href="/">Retour à la recherche</a>.</p>`,
   );
   writeFileSync(resolve(DIST, ".nojekyll"), "");
+
+  writeFileSync(
+    resolve(DIST, "meta.json"),
+    JSON.stringify({
+      built_at: manifest.built_at,
+      total: manifest.total,
+      sources: manifest.facets.source.map(s => ({ id: s.value, name: s.label, n: s.n })),
+      facets: manifest.facets,
+      search_engine: "tqsearch",
+    }),
+  );
 }
 
 function shellQuote(value) {
@@ -267,7 +278,6 @@ if (WITH_PAGEFIND) {
   await buildPagefind();
 } else {
   rmSync(PAGEFIND_DIR, { recursive: true, force: true });
-  rmSync(resolve(DIST, "meta.json"), { force: true });
 }
 
 let tqsearchSize = "?";
