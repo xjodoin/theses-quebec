@@ -55,7 +55,7 @@ export default {
     };
   },
 
-  async search({ q, type, year_min, year_max, discipline, source, page, size }) {
+  async search({ q, type, year_min, year_max, discipline, source, page, size, exact }) {
     const filters = { facets: {}, numbers: {} };
     if (type) filters.facets.type = [type];
     if (discipline?.size) filters.facets.discipline = [...discipline];
@@ -70,10 +70,12 @@ export default {
       page,
       size,
       filters,
+      exact,
     });
 
     return {
       total: response.total,
+      approximate: !!response.approximate,
       correctedQuery: response.correctedQuery || null,
       corrections: response.corrections || null,
       results: response.results.map(resultRow),

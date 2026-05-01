@@ -272,7 +272,7 @@ async function runBackend(page, spec, queries, runs, size, filters, options) {
         }
       }
 
-      if (options.exactRefine && spec.backend === "tqsearch" && firstApproximate) {
+      if (options.exactRefine && firstApproximate) {
         const measured = await meter.measure(() => page.evaluate(async ({ q, size, filters, rerank }) => {
           const t0 = performance.now();
           const response = await window.__benchBackend.search({
