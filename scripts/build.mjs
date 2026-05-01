@@ -5,7 +5,10 @@
  * Production builds ship tqsearch only:
  *   node scripts/build.mjs
  *
- * Benchmark builds can also include Pagefind for comparison:
+ * Benchmark builds include Rangefind for standalone-engine comparison:
+ *   node scripts/build.mjs --with-rangefind
+ *
+ * Legacy comparison builds can also include Pagefind:
  *   node scripts/build.mjs --with-pagefind
  *
  * Experimental builds can bake generated sparse expansion into tqsearch:
@@ -15,6 +18,7 @@
 import Database from "better-sqlite3";
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -29,12 +33,18 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DB_PATH = resolve(ROOT, "data/theses.db");
 const DIST = resolve(ROOT, "dist");
 const PAGEFIND_DIR = resolve(DIST, "pagefind");
+const RANGEFIND_DIR = resolve(DIST, "rangefind");
+const RANGEFIND_LIB_DIR = resolve(DIST, "rangefind-lib");
 const WITH_PAGEFIND = process.argv.includes("--with-pagefind") || process.argv.includes("--pagefind");
+const WITH_RANGEFIND = process.argv.includes("--with-rangefind") || process.env.TQSEARCH_WITH_RANGEFIND === "1";
+const RANGEFIND_ONLY = process.argv.includes("--rangefind-only");
+const RANGEFIND_WITH_TYPO = !process.argv.includes("--no-rangefind-typo") && process.env.TQSEARCH_RANGEFIND_TYPO !== "0";
 const WITH_SPARSE_EXPANSION = process.argv.includes("--with-sparse-expansion")
   || process.env.TQSEARCH_WITH_SPARSE_EXPANSION === "1";
 const SPARSE_EXPANSION_PATH = resolve(DIST, "_tqsearch_sparse_expansions.jsonl");
 
 const ABSTRACT_LIMIT = 900;
+const ABSTRACT_INDEX_LIMIT = 1200;
 const INITIAL_RESULT_LIMIT = 50;
 
 if (!existsSync(DB_PATH)) {
@@ -42,7 +52,7 @@ if (!existsSync(DB_PATH)) {
   execSync("node scripts/fetch_db.mjs", { stdio: "inherit", cwd: ROOT });
 }
 
-rmSync(DIST, { recursive: true, force: true });
+if (!RANGEFIND_ONLY) rmSync(DIST, { recursive: true, force: true });
 mkdirSync(DIST, { recursive: true });
 
 function recordUrl(r) {
@@ -60,6 +70,13 @@ function truncatedAbstract(r) {
   if (!r.abstract) return "";
   return r.abstract.length > ABSTRACT_LIMIT
     ? r.abstract.slice(0, ABSTRACT_LIMIT) + "…"
+    : r.abstract;
+}
+
+function indexAbstract(r) {
+  if (!r.abstract) return "";
+  return r.abstract.length > ABSTRACT_INDEX_LIMIT
+    ? r.abstract.slice(0, ABSTRACT_INDEX_LIMIT)
     : r.abstract;
 }
 
@@ -125,6 +142,9 @@ function writeStaticShell(manifest) {
   copyFileSync(resolve(ROOT, "web/backends/tqsearch.js"), resolve(DIST, "backends/tqsearch.js"));
   if (WITH_PAGEFIND) {
     copyFileSync(resolve(ROOT, "web/backends/pagefind.js"), resolve(DIST, "backends/pagefind.js"));
+  }
+  if (WITH_RANGEFIND) {
+    copyFileSync(resolve(ROOT, "web/backends/rangefind.js"), resolve(DIST, "backends/rangefind.js"));
   }
 
   writeFileSync(
@@ -257,6 +277,55 @@ async function buildPagefind() {
   await pagefind.close();
 }
 
+async function buildRangefind() {
+  console.log("▸ Building Rangefind comparison index");
+  const { build } = await import("rangefind/builder");
+  const rows = loadRows();
+  const inputPath = resolve(DIST, "_rangefind_docs.jsonl");
+  const configPath = resolve(DIST, "_rangefind.config.json");
+  const line = (r) => JSON.stringify({
+    ...rowResult(r),
+    subjects: r.subjects || "",
+    source_name: r.source_name || r.source_id || "",
+    decade: r.year ? `${Math.floor(r.year / 10) * 10}s` : "",
+    abstract_index: indexAbstract(r) || "",
+  });
+  writeFileSync(inputPath, rows.map(line).join("\n"));
+  writeFileSync(configPath, JSON.stringify({
+    input: "_rangefind_docs.jsonl",
+    output: "rangefind",
+    idPath: "id",
+    urlPath: "url",
+    docChunkSize: 100,
+    maxTermsPerDoc: 140,
+    maxExpansionTermsPerDoc: 12,
+    fields: [
+      { name: "title", path: "title", weight: 4.5, b: 0.35, phrase: true, phraseWeight: 10, proximity: true, proximityWeight: 3.5, proximityWindow: 5, maxProximityTokens: 96 },
+      { name: "authors", path: "authors", weight: 3.0, b: 0.0 },
+      { name: "advisors", path: "advisors", weight: 2.4, b: 0.0 },
+      { name: "subjects", path: "subjects", weight: 2.2, b: 0.35 },
+      { name: "discipline", path: "discipline", weight: 1.8, b: 0.0 },
+      { name: "abstract", path: "abstract_index", weight: 1.0, b: 0.75, typo: false },
+      { name: "source", path: "source_name", weight: 0.4, b: 0.0 },
+      { name: "year", path: "year", weight: 1.2, b: 0.0 }
+    ],
+    facets: [
+      { name: "source_id", path: "source_id", labelPath: "source_name" },
+      { name: "discipline", path: "discipline" },
+      { name: "type", path: "type" },
+      { name: "decade", path: "decade" }
+    ],
+    numbers: [{ name: "year", path: "year" }],
+    typo: { enabled: RANGEFIND_WITH_TYPO },
+    display: ["id", "url", "title", "authors", "advisors", "abstract", "year", "type", "source_id", "source_name", "discipline"]
+  }));
+  await build({ configPath });
+  rmSync(inputPath, { force: true });
+  rmSync(configPath, { force: true });
+  rmSync(RANGEFIND_LIB_DIR, { recursive: true, force: true });
+  cpSync(resolve(ROOT, "node_modules/rangefind/src"), RANGEFIND_LIB_DIR, { recursive: true });
+}
+
 let tqsearchArgs = "";
 if (WITH_SPARSE_EXPANSION) {
   console.log("▸ Generating TQSearch sparse expansion terms");
@@ -267,9 +336,11 @@ if (WITH_SPARSE_EXPANSION) {
   tqsearchArgs = ` --sparse-expansions=${shellQuote(SPARSE_EXPANSION_PATH)}`;
 }
 
-console.log("▸ Building TQSearch production index");
-execSync(`node scripts/build_tqsearch.mjs${tqsearchArgs}`, { stdio: "inherit", cwd: ROOT });
-rmSync(SPARSE_EXPANSION_PATH, { force: true });
+if (!RANGEFIND_ONLY) {
+  console.log("▸ Building TQSearch production index");
+  execSync(`node scripts/build_tqsearch.mjs${tqsearchArgs}`, { stdio: "inherit", cwd: ROOT });
+  rmSync(SPARSE_EXPANSION_PATH, { force: true });
+}
 
 const manifest = JSON.parse(readFileSync(resolve(DIST, "tqsearch/manifest.json"), "utf8"));
 writeStaticShell(manifest);
@@ -278,6 +349,13 @@ if (WITH_PAGEFIND) {
   await buildPagefind();
 } else {
   rmSync(PAGEFIND_DIR, { recursive: true, force: true });
+}
+
+if (WITH_RANGEFIND) {
+  await buildRangefind();
+} else {
+  rmSync(RANGEFIND_DIR, { recursive: true, force: true });
+  rmSync(RANGEFIND_LIB_DIR, { recursive: true, force: true });
 }
 
 let tqsearchSize = "?";
@@ -290,4 +368,9 @@ try {
 } catch {}
 
 const extra = WITH_PAGEFIND ? `, pagefind/ ≈ ${pagefindSize}` : "";
-console.log(`\n✓ Built ${DIST}/  (tqsearch/ ≈ ${tqsearchSize}${extra})`);
+let rangefindSize = null;
+try {
+  if (WITH_RANGEFIND) rangefindSize = execSync(`du -sh "${RANGEFIND_DIR}" | cut -f1`).toString().trim();
+} catch {}
+const rangefindExtra = WITH_RANGEFIND ? `, rangefind/ ≈ ${rangefindSize}` : "";
+console.log(`\n✓ Built ${DIST}/  (tqsearch/ ≈ ${tqsearchSize}${extra}${rangefindExtra})`);

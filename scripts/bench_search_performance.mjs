@@ -25,7 +25,7 @@ const DEFAULT_QUERIES = [
 function parseArgs(argv) {
   const args = {
     url: "http://localhost:5000/",
-    engines: ["tqsearch", "pagefind"],
+    engines: ["tqsearch", "rangefind"],
     queries: DEFAULT_QUERIES,
     runs: 3,
     size: 10,
@@ -126,7 +126,7 @@ function dirStats(path) {
 }
 
 function isSearchAsset(url) {
-  return url.includes("/backends/") || url.includes("/pagefind/") || url.includes("/tqsearch/");
+  return url.includes("/backends/") || url.includes("/pagefind/") || url.includes("/tqsearch/") || url.includes("/rangefind/") || url.includes("/rangefind-lib/");
 }
 
 function createNetworkMeter(page) {
@@ -155,8 +155,32 @@ function createNetworkMeter(page) {
 }
 
 async function loadIndexStats(page, backend, distRoot) {
-  const localDir = resolve(distRoot, backend === "tqsearch" ? "tqsearch" : "pagefind");
+  const localDir = resolve(distRoot, backend);
   const local = dirStats(localDir) || { bytes: 0, files: 0 };
+  if (backend === "rangefind") {
+    const termLocal = dirStats(resolve(localDir, "terms")) || { bytes: 0, files: 0 };
+    const typoLocal = dirStats(resolve(localDir, "typo")) || { bytes: 0, files: 0 };
+    const manifestStats = await page.evaluate(async () => {
+      const manifest = await fetch("./rangefind/manifest.json").then(r => r.json());
+      return {
+        terms: manifest.stats?.terms || 0,
+        postings: manifest.stats?.postings || 0,
+        shards: manifest.shards?.length || 0,
+        scoring: manifest.stats?.scoring || "rangefind-bm25f",
+        termStorage: manifest.stats?.term_storage || "",
+        termPackFiles: manifest.stats?.term_pack_files || 0,
+        typo: manifest.typo || null,
+      };
+    });
+    return {
+      ...local,
+      ...manifestStats,
+      termBytes: termLocal.bytes,
+      termFiles: termLocal.files,
+      typoBytes: typoLocal.bytes,
+      typoFiles: typoLocal.files,
+    };
+  }
   if (backend !== "tqsearch") return { ...local };
   const termLocal = dirStats(resolve(localDir, "terms")) || { bytes: 0, files: 0 };
   const typoLocal = dirStats(resolve(localDir, "typo")) || { bytes: 0, files: 0 };
@@ -341,8 +365,8 @@ function printIndexSummary(rows) {
     const termPacks = stats.termPackFiles ? Number(stats.termPackFiles).toLocaleString("fr-CA") : "-";
     const typoMb = stats.typoBytes ? mb(stats.typoBytes).toFixed(1) : "-";
     const typoFiles = stats.typoFiles ? Number(stats.typoFiles).toLocaleString("fr-CA") : "-";
-    const typoPacks = stats.typo?.stats?.pack_files
-      ? Number(stats.typo.stats.pack_files).toLocaleString("fr-CA")
+    const typoPacks = (stats.typo?.stats?.pack_files || stats.typo?.packs)
+      ? Number(stats.typo.stats?.pack_files || stats.typo.packs).toLocaleString("fr-CA")
       : "-";
     const typoKeys = stats.typo?.stats?.delete_keys
       ? Number(stats.typo.stats.delete_keys).toLocaleString("fr-CA")

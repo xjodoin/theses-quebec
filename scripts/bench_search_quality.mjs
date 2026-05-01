@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Quality benchmark for static search against SQLite FTS5 and Lucene.
+ * Quality benchmark for static search against SQLite FTS5.
+ * Lucene remains available as an opt-in reference backend.
  *
  * Requires a built dist/ and a local static server:
  *   PORT=5124 npm run serve
@@ -66,7 +67,7 @@ function parseArgs(argv) {
   const args = {
     url: "http://localhost:5000/",
     db: "data/theses.db",
-    engines: ["tqsearch", "pagefind", "lucene"],
+    engines: ["tqsearch", "rangefind"],
     known: 150,
     typos: 120,
     topical: DEFAULT_TOPICAL_QUERIES,

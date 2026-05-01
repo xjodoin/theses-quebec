@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "build:expanded": "node scripts/build.mjs --with-sparse-expansion",
-    "build:bench": "node scripts/build.mjs --with-pagefind",
+    "build:bench": "node scripts/build.mjs --with-rangefind",
     "build:tqsearch": "node scripts/build_tqsearch.mjs",
     "search:expand": "node scripts/generate_tqsearch_sparse_expansions.mjs",
     "bench:search:performance": "node scripts/bench_search_performance.mjs",
@@ -21,6 +21,7 @@
     "better-sqlite3": "^11.0.0",
     "minisearch": "^7.1.0",
     "pagefind": "^1.5.2",
-    "playwright-core": "^1.59.1"
+    "playwright-core": "^1.59.1",
+    "rangefind": "https://github.com/xjodoin/rangefind/archive/f6a86dc9ee78fa71b441fa9cee385f7210bc0dcc.tar.gz"
   }
 }

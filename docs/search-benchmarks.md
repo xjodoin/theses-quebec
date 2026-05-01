@@ -3,13 +3,13 @@
 This repo has two benchmark runners for the static search stack:
 
 - `npm run bench:search:performance` measures browser-visible latency for static backends.
-- `npm run bench:search:quality` compares static backend rankings against SQLite FTS5 and an Apache Lucene fuzzy-search reference.
+- `npm run bench:search:quality` compares static backend rankings against SQLite FTS5, with Apache Lucene still available as an opt-in fuzzy-search reference.
 
 The benchmarks expect a built `dist/` and a local static server. They use
 `playwright-core` against an installed Chrome-compatible browser. By default the
 runner tries the `chrome` channel, then `msedge`.
 
-The Lucene quality baseline also requires Java and Maven. It builds an in-memory
+The optional Lucene quality baseline requires Java and Maven. It builds an in-memory
 Lucene index from `data/theses.db` at benchmark startup; it does not use the
 static TQSearch artifact.
 
@@ -20,10 +20,15 @@ PORT=5124 npm run serve
 ```
 
 `npm run build` is the production GitHub Pages build and ships `tqsearch` only.
-Use `npm run build:bench` when comparing against Pagefind. Use
+Use `npm run build:bench` when comparing against Rangefind. Use
+`node scripts/build.mjs --with-pagefind` only for legacy Pagefind checks. Use
 `npm run build:expanded` only when evaluating generated sparse expansion; it is
 not the default production path unless the expansion improves the measured
 quality/performance tradeoff.
+
+Rangefind typo indexing is enabled in the thesis comparison build by default.
+Disable it with `node scripts/build.mjs --with-rangefind --no-rangefind-typo`
+only when isolating base ranking and artifact size.
 
 Leave the server running in one terminal and run benchmarks in another.
 
@@ -36,7 +41,7 @@ PLAYWRIGHT_EXECUTABLE_PATH=/path/to/chrome npm run bench:search:performance -- -
 
 ## Performance
 
-Default run, comparing `tqsearch` and Pagefind from a `build:bench` artifact:
+Default run, comparing `tqsearch` and Rangefind from a `build:bench` artifact:
 
 ```bash
 npm run bench:search:performance -- --url=http://localhost:5124/
@@ -113,7 +118,7 @@ Run it multiple times if you want warm-cache behavior.
 
 ## Quality
 
-Default run, comparing `tqsearch`, Pagefind, and Lucene against SQLite FTS5 from
+Default run, comparing `tqsearch` and Rangefind against SQLite FTS5 from
 a `build:bench` artifact:
 
 ```bash
@@ -125,6 +130,10 @@ Useful options:
 ```bash
 # Only one browser backend
 npm run bench:search:quality -- --url=http://localhost:5124/ --engines=tqsearch
+
+# Add the Lucene reference backend
+npm run bench:search:quality -- --url=http://localhost:5124/ \
+  --engines=tqsearch,rangefind,lucene
 
 # Disable the automatic tqsearch-base / tqsearch reranker split
 npm run bench:search:quality -- --url=http://localhost:5124/ \
@@ -271,16 +280,34 @@ For those filtered queries, fast top 10 matched exact top 10. The generic block
 filter summaries skipped 7, 67, 6, and 50 candidate blocks respectively before
 decoding.
 
-Latest Pagefind comparison from a `build:bench` artifact:
+Latest Rangefind comparison from a `build:bench` artifact, with Rangefind typo
+enabled:
 
 ```text
-Pagefind known item: Hit@1 90.7%, Hit@3 97.3%, Hit@10 97.3%, MRR@10 0.939
-Pagefind vs SQLite topical Overlap@10: 19.0%
-Pagefind vs SQLite topical NDCG@10:    20.0%
-Pagefind local artifact: 178.4 MB raw bytes, about 798 MB disk usage
-Pagefind init: 8 requests / 1756.3 KB
-Pagefind first-query range: 10-15 requests / 52.8-1913.1 KB / 222-4391 ms
+tqsearch known item:  Hit@1 99.0%, Hit@3 100.0%, Hit@10 100.0%, MRR@10 0.995
+Rangefind known item: Hit@1 99.0%, Hit@3 100.0%, Hit@10 100.0%, MRR@10 0.995
+
+tqsearch vs SQLite known-item Overlap@10: 87.0%
+Rangefind vs SQLite known-item Overlap@10: 87.2%
+tqsearch vs SQLite topical NDCG@10: 46.7%
+Rangefind vs SQLite topical NDCG@10: 47.6%
+
+tqsearch typo target Hit@10: 95.9%, MRR@10 0.954
+Rangefind typo target Hit@10: 95.9%, MRR@10 0.954
+
+tqsearch local artifact: 353.5 MB raw bytes, 1,926 files
+Rangefind local artifact: 356.4 MB raw bytes, 1,927 files
+tqsearch init: 4 requests / 178.9 KB
+Rangefind init: 10 requests / 168.0 KB
+tqsearch first-query range: 6-14 requests / 247.0-685.1 KB / 26-60 ms
+Rangefind first-query range: 7-14 requests / 298.1-702.2 KB / 31-53 ms
 ```
+
+Rangefind now matches `tqsearch` on the deterministic known-item and typo
+samples while slightly improving SQLite agreement on this run. The cost is a
+bench artifact in the same size class as `tqsearch` and a higher initialization
+request count because the standalone runtime still loads more small static
+modules.
 
 The implementation notes for the standalone static engine are in
 [`docs/static-search-design.md`](static-search-design.md).
