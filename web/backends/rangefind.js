@@ -6,7 +6,7 @@
  * thesis-specific tqsearch implementation.
  */
 
-import { createSearch } from "../rangefind-lib/runtime.js";
+import { createSearch } from "../rangefind/runtime.browser.js";
 
 let engine = null;
 let manifest = null;

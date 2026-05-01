@@ -297,13 +297,13 @@ Rangefind typo target Hit@10: 95.9%, MRR@10 0.954
 Lucene typo target Hit@10: 88.8%, MRR@10 0.866
 
 tqsearch local artifact: 353.5 MB raw bytes, 1,926 files
-Rangefind local artifact: 356.2 MB raw bytes, 1,934 files
+Rangefind local artifact: 356.3 MB raw bytes, 1,935 files
 Rangefind term directory: 4 pages + root, 179.0 KB compressed
 Rangefind typo directory: 2 pages + root, 72.1 KB compressed
 tqsearch init: 4 requests / 178.9 KB
-Rangefind init: 11 requests / 114.5 KB
-tqsearch first-query range: 6-14 requests / 247.0-685.1 KB / 28-67 ms
-Rangefind first-query range: 7-14 requests / 298.1-702.2 KB / 34-64 ms
+Rangefind init: 5 requests / 110.0 KB
+tqsearch first-query range: 6-14 requests / 247.0-685.1 KB / 28-64 ms
+Rangefind first-query range: 7-14 requests / 298.1-702.2 KB / 36-64 ms
 ```
 
 Rangefind now matches `tqsearch` on the deterministic known-item and typo
@@ -311,9 +311,8 @@ samples while slightly improving SQLite agreement on this run. Multi-term
 Rangefind queries can now return block-max top-k lower bounds; the exact
 refinement check had 100% top-10 overlap for the approximate queries in the
 default performance run. The paged directory removes the manifest shard-name
-list; the cost is a few small directory files and a higher initialization
-request count because the standalone runtime still loads more small static
-modules.
+list, and the standalone runtime now ships as one browser bundle instead of a
+copied `src/*.js` module tree.
 
 The implementation notes for the standalone static engine are in
 [`docs/static-search-design.md`](static-search-design.md).

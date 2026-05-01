@@ -126,7 +126,7 @@ function dirStats(path) {
 }
 
 function isSearchAsset(url) {
-  return url.includes("/backends/") || url.includes("/pagefind/") || url.includes("/tqsearch/") || url.includes("/rangefind/") || url.includes("/rangefind-lib/");
+  return url.includes("/backends/") || url.includes("/pagefind/") || url.includes("/tqsearch/") || url.includes("/rangefind/");
 }
 
 function createNetworkMeter(page) {

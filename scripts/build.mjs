@@ -18,7 +18,6 @@
 import Database from "better-sqlite3";
 import {
   copyFileSync,
-  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -34,7 +33,7 @@ const DB_PATH = resolve(ROOT, "data/theses.db");
 const DIST = resolve(ROOT, "dist");
 const PAGEFIND_DIR = resolve(DIST, "pagefind");
 const RANGEFIND_DIR = resolve(DIST, "rangefind");
-const RANGEFIND_LIB_DIR = resolve(DIST, "rangefind-lib");
+const LEGACY_RANGEFIND_LIB_DIR = resolve(DIST, "rangefind-lib");
 const WITH_PAGEFIND = process.argv.includes("--with-pagefind") || process.argv.includes("--pagefind");
 const WITH_RANGEFIND = process.argv.includes("--with-rangefind") || process.env.TQSEARCH_WITH_RANGEFIND === "1";
 const RANGEFIND_ONLY = process.argv.includes("--rangefind-only");
@@ -322,8 +321,11 @@ async function buildRangefind() {
   await build({ configPath });
   rmSync(inputPath, { force: true });
   rmSync(configPath, { force: true });
-  rmSync(RANGEFIND_LIB_DIR, { recursive: true, force: true });
-  cpSync(resolve(ROOT, "node_modules/rangefind/src"), RANGEFIND_LIB_DIR, { recursive: true });
+  rmSync(LEGACY_RANGEFIND_LIB_DIR, { recursive: true, force: true });
+  copyFileSync(
+    resolve(ROOT, "node_modules/rangefind/dist/runtime.browser.js"),
+    resolve(RANGEFIND_DIR, "runtime.browser.js"),
+  );
 }
 
 let tqsearchArgs = "";
@@ -355,7 +357,7 @@ if (WITH_RANGEFIND) {
   await buildRangefind();
 } else {
   rmSync(RANGEFIND_DIR, { recursive: true, force: true });
-  rmSync(RANGEFIND_LIB_DIR, { recursive: true, force: true });
+  rmSync(LEGACY_RANGEFIND_LIB_DIR, { recursive: true, force: true });
 }
 
 let tqsearchSize = "?";
