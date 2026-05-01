@@ -165,11 +165,15 @@ async function loadIndexStats(page, backend, distRoot) {
       return {
         terms: manifest.stats?.terms || 0,
         postings: manifest.stats?.postings || 0,
-        shards: manifest.shards?.length || 0,
+        shards: manifest.directory?.entries || manifest.stats?.term_shards || 0,
         scoring: manifest.stats?.scoring || "rangefind-bm25f",
         termStorage: manifest.stats?.term_storage || "",
         termPackFiles: manifest.stats?.term_pack_files || 0,
+        termDirectoryFiles: manifest.directory ? (manifest.directory.page_files || 0) + 1 : 0,
+        termDirectoryBytes: manifest.directory?.total_bytes || 0,
         typo: manifest.typo || null,
+        typoDirectoryFiles: manifest.typo?.directory ? (manifest.typo.directory.page_files || 0) + 1 : 0,
+        typoDirectoryBytes: manifest.typo?.directory?.total_bytes || 0,
       };
     });
     return {
@@ -354,8 +358,8 @@ function printIndexSummary(rows) {
     if (!byEngine.has(row.engine)) byEngine.set(row.engine, row.indexStats || {});
   }
   console.log("Index / build artifact");
-  console.log("| Engine | Files | Size MB | Terms | Postings | Shards | Term MB | Term files | Term packs | Typo MB | Typo files | Typo packs | Typo keys | Scoring | Sparse |");
-  console.log("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|");
+  console.log("| Engine | Files | Size MB | Terms | Postings | Shards | Term MB | Term files | Term packs | Term dir KB | Typo MB | Typo files | Typo packs | Typo dir KB | Typo keys | Scoring | Sparse |");
+  console.log("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|");
   for (const [engine, stats] of byEngine) {
     const terms = stats.terms ? Number(stats.terms).toLocaleString("fr-CA") : "-";
     const postings = stats.postings ? Number(stats.postings).toLocaleString("fr-CA") : "-";
@@ -363,15 +367,17 @@ function printIndexSummary(rows) {
     const termMb = stats.termBytes ? mb(stats.termBytes).toFixed(1) : "-";
     const termFiles = stats.termFiles ? Number(stats.termFiles).toLocaleString("fr-CA") : "-";
     const termPacks = stats.termPackFiles ? Number(stats.termPackFiles).toLocaleString("fr-CA") : "-";
+    const termDirectoryKb = stats.termDirectoryBytes ? kb(stats.termDirectoryBytes).toFixed(1) : "-";
     const typoMb = stats.typoBytes ? mb(stats.typoBytes).toFixed(1) : "-";
     const typoFiles = stats.typoFiles ? Number(stats.typoFiles).toLocaleString("fr-CA") : "-";
     const typoPacks = (stats.typo?.stats?.pack_files || stats.typo?.packs)
       ? Number(stats.typo.stats?.pack_files || stats.typo.packs).toLocaleString("fr-CA")
       : "-";
+    const typoDirectoryKb = stats.typoDirectoryBytes ? kb(stats.typoDirectoryBytes).toFixed(1) : "-";
     const typoKeys = stats.typo?.stats?.delete_keys
       ? Number(stats.typo.stats.delete_keys).toLocaleString("fr-CA")
       : "-";
-    console.log(`| ${engine} | ${stats.files || 0} | ${mb(stats.bytes || 0).toFixed(1)} | ${terms} | ${postings} | ${shards} | ${termMb} | ${termFiles} | ${termPacks} | ${typoMb} | ${typoFiles} | ${typoPacks} | ${typoKeys} | ${stats.scoring || "-"} | ${sparseLabel(stats)} |`);
+    console.log(`| ${engine} | ${stats.files || 0} | ${mb(stats.bytes || 0).toFixed(1)} | ${terms} | ${postings} | ${shards} | ${termMb} | ${termFiles} | ${termPacks} | ${termDirectoryKb} | ${typoMb} | ${typoFiles} | ${typoPacks} | ${typoDirectoryKb} | ${typoKeys} | ${stats.scoring || "-"} | ${sparseLabel(stats)} |`);
   }
   console.log("");
 }
