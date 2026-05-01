@@ -38,6 +38,7 @@ const WITH_PAGEFIND = process.argv.includes("--with-pagefind") || process.argv.i
 const WITH_RANGEFIND = process.argv.includes("--with-rangefind") || process.env.TQSEARCH_WITH_RANGEFIND === "1";
 const RANGEFIND_ONLY = process.argv.includes("--rangefind-only");
 const RANGEFIND_WITH_TYPO = !process.argv.includes("--no-rangefind-typo") && process.env.TQSEARCH_RANGEFIND_TYPO !== "0";
+const RANGEFIND_REDUCE_WORKERS = process.env.RANGEFIND_REDUCE_WORKERS || "";
 const WITH_SPARSE_EXPANSION = process.argv.includes("--with-sparse-expansion")
   || process.env.TQSEARCH_WITH_SPARSE_EXPANSION === "1";
 const SPARSE_EXPANSION_PATH = resolve(DIST, "_tqsearch_sparse_expansions.jsonl");
@@ -290,7 +291,7 @@ async function buildRangefind() {
     abstract_index: indexAbstract(r) || "",
   });
   writeFileSync(inputPath, rows.map(line).join("\n"));
-  writeFileSync(configPath, JSON.stringify({
+  const config = {
     input: "_rangefind_docs.jsonl",
     output: "rangefind",
     idPath: "id",
@@ -317,7 +318,11 @@ async function buildRangefind() {
     numbers: [{ name: "year", path: "year" }],
     typo: { enabled: RANGEFIND_WITH_TYPO },
     display: ["id", "url", "title", "authors", "advisors", "abstract", "year", "type", "source_id", "source_name", "discipline"]
-  }));
+  };
+  if (RANGEFIND_REDUCE_WORKERS) {
+    config.reduceWorkers = RANGEFIND_REDUCE_WORKERS === "auto" ? "auto" : Number(RANGEFIND_REDUCE_WORKERS);
+  }
+  writeFileSync(configPath, JSON.stringify(config));
   await build({ configPath });
   rmSync(inputPath, { force: true });
   rmSync(configPath, { force: true });
