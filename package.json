@@ -1,27 +1,21 @@
 {
   "name": "theses-quebec-static",
   "version": "0.1.0",
-  "description": "Static-site build pipeline: SQLite → TQSearch index → dist/",
+  "description": "Static-site build pipeline: SQLite → Rangefind index → dist/",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "build:expanded": "node scripts/build.mjs --with-sparse-expansion",
-    "build:bench": "node scripts/build.mjs --with-rangefind",
-    "build:tqsearch": "node scripts/build_tqsearch.mjs",
-    "search:expand": "node scripts/generate_tqsearch_sparse_expansions.mjs",
-    "bench:search:performance": "node scripts/bench_search_performance.mjs",
-    "bench:search:quality": "node scripts/bench_search_quality.mjs",
+    "build": "node scripts/build_rangefind.mjs --slim",
     "serve": "node scripts/serve.mjs",
     "deploy": "node scripts/deploy.mjs",
     "db:fetch": "node scripts/fetch_db.mjs",
-    "db:release": "node scripts/release_db.mjs"
+    "db:release": "node scripts/release_db.mjs",
+    "build:update": "node scripts/build_rangefind.mjs --update --slim",
+    "build:full": "node scripts/build_rangefind.mjs"
   },
   "devDependencies": {
     "better-sqlite3": "^11.0.0",
-    "minisearch": "^7.1.0",
-    "pagefind": "^1.5.2",
     "playwright-core": "^1.59.1",
-    "rangefind": "https://github.com/xjodoin/rangefind/archive/26d0ada.tar.gz"
+    "rangefind": "^0.2.0"
   }
 }

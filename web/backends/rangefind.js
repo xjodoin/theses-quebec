@@ -1,25 +1,34 @@
 /**
- * Benchmark adapter for the standalone Rangefind package.
+ * Production search backend: Rangefind static index over HTTP range requests.
  *
- * This is intentionally not the production backend. It lets the shared
- * benchmark runners compare the extracted open-source engine against the
- * thesis-specific tqsearch implementation.
+ * The index is built by scripts/build_rangefind.mjs from data/theses.db.
+ * This adapter maps the shared UI's query state (web/common.js) onto the
+ * Rangefind runtime and exposes facet counts and autocomplete.
  */
 
 import { createSearch } from "../rangefind/runtime.browser.js";
 
 let engine = null;
 let manifest = null;
+let globalFacetCache = null;
 
-function facet(name) {
-  return manifest?.facets?.[name] || [];
-}
-
-function globalFacets() {
-  return {
-    discipline: facet("discipline"),
-    source: facet("source_id"),
-    decade: facet("decade").slice().sort((a, b) => a.value.localeCompare(b.value)),
+// The generational engine merges facet counts across generations, so an
+// empty-query facet request yields the corpus-wide distribution. Requested
+// once at init and reused for the sidebar (query-independent, matching the
+// UI's existing behavior). size is generous so every discipline/source shows.
+async function loadGlobalFacets() {
+  const response = await engine.search({
+    q: "",
+    size: 1,
+    facets: { fields: ["discipline", "source_id", "decade", "type"], size: 500 },
+  });
+  const map = (field) => (response.facets?.[field]?.values || [])
+    .map((v) => ({ value: v.value, label: v.label, n: v.count }));
+  globalFacetCache = {
+    discipline: map("discipline"),
+    source: map("source_id"),
+    decade: map("decade").slice().sort((a, b) => a.value.localeCompare(b.value)),
+    type: map("type"),
   };
 }
 
@@ -38,6 +47,7 @@ function resultRow(row) {
     url: row.url || "",
     excerpt: null,
     score: row.score,
+    highlights: row.highlights || null,
   };
 }
 
@@ -48,11 +58,19 @@ export default {
   async init() {
     engine = await createSearch({ baseUrl: new URL("./rangefind/", location.href).href });
     manifest = engine.manifest;
+    await loadGlobalFacets();
     return {
       total: manifest.total,
-      sources: facet("source_id").map(s => ({ id: s.value, name: s.label, n: s.n })),
-      builtAt: manifest.built_at,
+      sources: (globalFacetCache.source || []).map((s) => ({ id: s.value, name: s.label, n: s.n })),
+      builtAt: manifest.built_at || manifest.builtAt || null,
     };
+  },
+
+  // Type-ahead suggestions (titles, author names, disciplines).
+  async suggest(q) {
+    if (typeof engine?.suggest !== "function") return [];
+    const response = await engine.suggest({ q, size: 8 });
+    return (response.suggestions || []).map((s) => s.text);
   },
 
   async search({ q, type, year_min, year_max, discipline, source, page, size, exact }) {
@@ -60,10 +78,9 @@ export default {
     if (type) filters.facets.type = [type];
     if (discipline?.size) filters.facets.discipline = [...discipline];
     if (source?.size) filters.facets.source_id = [...source];
-    if (year_min || year_max) filters.numbers.year = {
-      min: year_min || undefined,
-      max: year_max || undefined,
-    };
+    if (year_min || year_max) {
+      filters.numbers.year = { min: year_min || undefined, max: year_max || undefined };
+    }
 
     const response = await engine.search({
       q: q || "",
@@ -71,6 +88,7 @@ export default {
       size,
       filters,
       exact,
+      highlight: q ? { fields: ["title", "abstract"], maxChars: 260 } : undefined,
     });
 
     return {
@@ -79,7 +97,7 @@ export default {
       correctedQuery: response.correctedQuery || null,
       corrections: response.corrections || null,
       results: response.results.map(resultRow),
-      facets: globalFacets(),
+      facets: globalFacetCache,
       stats: response.stats || {},
     };
   },

@@ -2,7 +2,8 @@ name: Deploy to GitHub Pages
 
 # `scripts/deploy.mjs` can build dist/ locally, upload the tar.gz as a
 # `pages-*` release asset, then trigger this workflow with the release tag
-# as input. Without a tag, the workflow builds tqsearch from main directly.
+# as input. Without a tag, the workflow builds the Rangefind index from main
+# directly, adding only the theses changed since the last build (incremental).
 #
 # We use workflow_dispatch (not `release: published`) because
 # release-event workflows run on the tag ref; the github-pages
@@ -99,11 +100,25 @@ jobs:
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
         run: npm ci
 
-      - name: Build tqsearch site
+      # Persist the built Rangefind index between runs so each deploy can add
+      # only the changed theses as a new generation instead of rebuilding all
+      # 187k. The rolling key always writes a fresh entry and restores the most
+      # recent one; a cache miss (or the periodic generation cap) simply falls
+      # back to a full rebuild, so correctness never depends on the cache.
+      - name: Restore Rangefind index
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
+        uses: actions/cache@v4
+        with:
+          path: dist/rangefind
+          key: rangefind-index-${{ github.run_id }}
+          restore-keys: |
+            rangefind-index-
+
+      - name: Build search site (incremental Rangefind index)
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: npm run build
+        run: npm run build:update
 
       - name: Upload built Pages artifact
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.tag != '') }}

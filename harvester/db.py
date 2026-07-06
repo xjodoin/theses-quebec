@@ -239,6 +239,12 @@ def upsert_thesis(conn: sqlite3.Connection, row: dict) -> None:
         f"VALUES ({placeholders}, ?) "
         f"ON CONFLICT(oai_identifier) DO UPDATE SET "
         f"{standard_updates}, "
+        # Bump the ingest timestamp on every touch so `harvested_at` means
+        # "last time we ingested this record" (new or changed). The OAI
+        # harvest is incremental (from=<last_harvest>), so only records the
+        # source reports as changed are upserted — which makes harvested_at a
+        # reliable delta marker for incremental downstream index updates.
+        f"harvested_at = datetime('now'), "
         f"discipline = CASE WHEN ({new_rank}) >= ({cur_rank}) "
         f"                  THEN excluded.discipline "
         f"                  ELSE theses.discipline END, "

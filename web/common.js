@@ -768,8 +768,88 @@ export async function bootstrap(backend, options = {}) {
   });
   $("#q-clear").addEventListener("click", () => {
     $("#q").value = ""; state.q = ""; state.page = 1;
-    $("#q-clear").classList.add("hidden"); runSearch();
+    $("#q-clear").classList.add("hidden"); hideSuggest(); runSearch();
   });
+
+  // Search-as-you-type suggestions, powered by the backend's suggest() (the
+  // Rangefind suggestion sidecar: titles, author names, and disciplines).
+  // Degrades to nothing if the backend has no suggest capability.
+  const suggestBox = $("#q-suggest");
+  let suggestItems = [];
+  let suggestActive = -1;
+  let suggestToken = 0;
+  let suggestTimer;
+
+  function hideSuggest() {
+    if (!suggestBox) return;
+    suggestBox.classList.add("hidden");
+    suggestBox.replaceChildren();
+    suggestItems = [];
+    suggestActive = -1;
+  }
+
+  function paintSuggest() {
+    [...suggestBox.children].forEach((li, i) => {
+      li.classList.toggle("bg-accent-50", i === suggestActive);
+      li.classList.toggle("dark:bg-ink-700", i === suggestActive);
+      if (i === suggestActive) li.scrollIntoView({ block: "nearest" });
+    });
+  }
+
+  function renderSuggest(list) {
+    suggestItems = list;
+    suggestActive = -1;
+    if (!list.length) return hideSuggest();
+    suggestBox.replaceChildren(...list.map((text, i) => {
+      const li = document.createElement("li");
+      li.setAttribute("role", "option");
+      li.dataset.i = String(i);
+      li.className = "px-3 py-1.5 text-sm text-ink-700 dark:text-ink-200 cursor-pointer truncate hover:bg-accent-50 dark:hover:bg-ink-700";
+      li.textContent = text;
+      return li;
+    }));
+    suggestBox.classList.remove("hidden");
+  }
+
+  function acceptSuggest(text) {
+    $("#q").value = text;
+    $("#q-clear").classList.remove("hidden");
+    state.q = text;
+    state.page = 1;
+    hideSuggest();
+    clearTimeout(qTimer);
+    runSearch();
+  }
+
+  if (suggestBox && typeof backend.suggest === "function") {
+    suggestBox.addEventListener("mousedown", (e) => {
+      const li = e.target.closest("[data-i]");
+      if (!li) return;
+      e.preventDefault();                       // keep focus, avoid blur-hide race
+      acceptSuggest(suggestItems[Number(li.dataset.i)]);
+    });
+    $("#q").addEventListener("input", (e) => {
+      const value = e.target.value.trim();
+      clearTimeout(suggestTimer);
+      if (value.length < 2) return hideSuggest();
+      // Faster than the 250 ms search debounce — suggestions should feel live.
+      suggestTimer = setTimeout(async () => {
+        const token = ++suggestToken;
+        try {
+          const list = await backend.suggest(value);
+          if (token === suggestToken && document.activeElement === $("#q")) renderSuggest(list || []);
+        } catch { hideSuggest(); }
+      }, 90);
+    });
+    $("#q").addEventListener("keydown", (e) => {
+      if (suggestBox.classList.contains("hidden")) return;
+      if (e.key === "ArrowDown") { e.preventDefault(); suggestActive = Math.min(suggestActive + 1, suggestItems.length - 1); paintSuggest(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); suggestActive = Math.max(suggestActive - 1, -1); paintSuggest(); }
+      else if (e.key === "Enter" && suggestActive >= 0) { e.preventDefault(); acceptSuggest(suggestItems[suggestActive]); }
+      else if (e.key === "Escape") { e.stopPropagation(); hideSuggest(); }
+    });
+    $("#q").addEventListener("blur", () => setTimeout(hideSuggest, 120));
+  }
   $("#sort").addEventListener("change", (e) => { state.sort = e.target.value; state.page = 1; runSearch(); });
   $("#year_min").addEventListener("change", (e) => { state.year_min = e.target.value ? +e.target.value : null; state.page = 1; runSearch(); });
   $("#year_max").addEventListener("change", (e) => { state.year_max = e.target.value ? +e.target.value : null; state.page = 1; runSearch(); });
