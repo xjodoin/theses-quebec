@@ -23,6 +23,7 @@
 
 import Database from "better-sqlite3";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { availableParallelism } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -321,7 +322,18 @@ function writeSite() {
   console.log(`▸ Site shell written (${total.toLocaleString()} theses, ${sourceCount} sources)`);
 }
 
+// data/theses.db is distributed via GitHub Releases (gitignored), so fetch it
+// on demand — same as the previous build did. Skipped when RANGEFIND_DB
+// points at an explicit database (tests).
+function ensureDatabase() {
+  if (existsSync(DB_PATH)) return;
+  if (process.env.RANGEFIND_DB) throw new Error(`RANGEFIND_DB not found: ${DB_PATH}`);
+  console.log("▸ Database missing — fetching latest release");
+  execSync("node scripts/fetch_db.mjs", { cwd: ROOT, stdio: "inherit" });
+}
+
 async function main() {
+  ensureDatabase();
   if (UPDATE) await incrementalBuild();
   else await fullBuild();
   writeSite();
